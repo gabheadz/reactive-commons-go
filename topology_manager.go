@@ -6,19 +6,19 @@ import (
 	"github.com/bancolombia/reactive-commons-go/internal/rabbit"
 )
 
-type RabbitTopologyManager struct {
+type rabbitTopologyManager struct {
 	client *rabbit.RabbitClient
 	domain *DomainDefinition
 }
 
-func NewTopologyManager(client *rabbit.RabbitClient, domain *DomainDefinition) *RabbitTopologyManager {
-	return &RabbitTopologyManager{
+func newTopologyManager(client *rabbit.RabbitClient, domain *DomainDefinition) *rabbitTopologyManager {
+	return &rabbitTopologyManager{
 		client: client,
 		domain: domain,
 	}
 }
 
-func (m *RabbitTopologyManager) SetupDomainEvents() error {
+func (m *rabbitTopologyManager) setupDomainEvents() error {
 
 	ch, err := m.client.CreateChannel(ChannelForEvents)
 	if err != nil {
@@ -44,7 +44,7 @@ func (m *RabbitTopologyManager) SetupDomainEvents() error {
 	return nil
 }
 
-func (m *RabbitTopologyManager) SetupDirectCommands() error {
+func (m *rabbitTopologyManager) setupDirectCommands() error {
 
 	ch, err := m.client.CreateChannel(ChannelForCommands)
 	if err != nil {
@@ -93,7 +93,7 @@ func (m *RabbitTopologyManager) SetupDirectCommands() error {
 	return nil
 }
 
-func (m *RabbitTopologyManager) SetupAsyncQueries() error {
+func (m *rabbitTopologyManager) setupAsyncQueries() error {
 
 	ch, err := m.client.CreateChannel(ChannelForReplies)
 	if err != nil {

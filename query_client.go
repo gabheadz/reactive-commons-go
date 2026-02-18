@@ -5,23 +5,25 @@ import (
 	"fmt"
 	"log"
 	"time"
-
-	"github.com/bancolombia/reactive-commons-go/internal/rabbit"
 )
 
-type RabbitQueryClient struct {
-	client *rabbit.RabbitClient
+type rabbitQueryClient struct {
+	client RabbitClientInterface
 	domain DomainDefinition
 }
 
-func NewQueryClient(client *rabbit.RabbitClient, domain DomainDefinition) *RabbitQueryClient {
-	return &RabbitQueryClient{
+func newQueryClient(client RabbitClientInterface, domain DomainDefinition) *rabbitQueryClient {
+	return &rabbitQueryClient{
 		client: client,
 		domain: domain,
 	}
 }
 
-func (c *RabbitQueryClient) SendQueryRequest(request AsyncQuery[any], opts RequestReplyOptions) ([]byte, error) {
+func (c *rabbitQueryClient) sendQueryRequest(request AsyncQuery[any], opts RequestReplyOptions) ([]byte, error) {
+	if c.client == nil {
+		return nil, fmt.Errorf("client is not initialized")
+	}
+
 	if request.Resource == "" {
 		return nil, fmt.Errorf("request resource and domain are required")
 	}

@@ -29,7 +29,7 @@ import (
 )
 
 func main() {
-    // Configure RabbitMQ connection
+    // Configure RabbitMQ connection and domain
     config := rcommons.DomainDefinition{
         Name: "my-service",
         ConnectionConfig: rcommons.RabbitMQConfig{
@@ -50,7 +50,7 @@ func main() {
     
     // Register handlers (see examples below)
     
-    // Start the service
+    // Start the service with the configured registry
     rc.Start(registry)
 }
 ```
@@ -91,7 +91,7 @@ if err != nil {
 #### Subscribing to Events
 
 ```go
-// Option 1: Using generic EventHandler
+// Option 1: Using generic EventHandler - register on the registry
 registry.ListenEvent("user.created", func(event any) error {
     domainEvent := event.(rcommons.DomainEvent[any])
     log.Printf("Received event: %s with data: %v", domainEvent.Name, domainEvent.Data)
@@ -103,6 +103,8 @@ rcommons.ListenEventTyped(registry, "user.created", func(event rcommons.DomainEv
     log.Printf("User created: %s (%s)", event.Data.Username, event.Data.Email)
     return nil
 })
+
+// Must call rc.Start(registry) before handlers will start listening
 ```
 
 ### 3. Working with Commands
@@ -117,7 +119,7 @@ type CreateOrder struct {
     Amount     float64
 }
 
-// Send a command
+// Send a command to a target service
 command := rcommons.Command[any]{
     Name:      "create.order",
     CommandId: uuid.New().String(),
@@ -142,6 +144,7 @@ if err != nil {
 #### Handling Commands
 
 ```go
+// Register command handlers on the registry BEFORE calling rc.Start()
 registry.HandleCommand("create.order", func(command any) error {
     cmd := command.(rcommons.Command[any])
     orderData := cmd.Data.(CreateOrder)
@@ -154,6 +157,9 @@ registry.HandleCommand("create.order", func(command any) error {
     
     return nil
 })
+
+// Must call rc.Start(registry) to start listening for commands
+rc.Start(registry)
 ```
 
 ### 4. Working with Queries (Request-Reply)
@@ -166,7 +172,7 @@ type GetUserQuery struct {
     UserID string
 }
 
-// Send a query
+// Send a query and wait for response
 query := rcommons.AsyncQuery[any]{
     Resource: "user.get",
     QueryData: GetUserQuery{
@@ -194,6 +200,7 @@ log.Printf("Received user: %v", user)
 #### Serving Queries
 
 ```go
+// Register query handlers on the registry BEFORE calling rc.Start()
 registry.ServeQuery("user.get", func(query any) (any, error) {
     q := query.(rcommons.AsyncQuery[any])
     queryData := q.QueryData.(GetUserQuery)
@@ -207,6 +214,9 @@ registry.ServeQuery("user.get", func(query any) (any, error) {
     
     return user, nil
 })
+
+// Must call rc.Start(registry) to start serving queries
+rc.Start(registry)
 ```
 
 ## API Reference
@@ -221,13 +231,13 @@ Configuration for your service domain.
 type DomainDefinition struct {
     Name                     string          // Service name (required)
     ConnectionConfig         RabbitMQConfig  // RabbitMQ connection config (required)
-    DomainEventsExchange     string          // Custom exchange name (optional)
-    DomainEventsSuffix       string          // Custom queue suffix (optional)
-    DirectExchange           string          // Custom direct exchange (optional)
-    DirectCommandsSuffix     string          // Custom command queue suffix (optional)
-    DirectQuerySuffix        string          // Custom query queue suffix (optional)
-    GlobalExchange           string          // Custom global exchange (optional)
-    GlobalRepliesSuffix      string          // Custom replies queue suffix (optional)
+    DomainEventsExchange     string          // Custom exchange name (optional, defaults to "domainEvents")
+    DomainEventsSuffix       string          // Custom queue suffix (optional, defaults to "subsEvents")
+    DirectExchange           string          // Custom direct exchange (optional, defaults to "directMessages")
+    DirectCommandsSuffix     string          // Custom command queue suffix (optional, defaults to "direct")
+    DirectQuerySuffix        string          // Custom query queue suffix (optional, defaults to "query")
+    GlobalExchange           string          // Custom global exchange (optional, defaults to "globalReply")
+    GlobalRepliesSuffix      string          // Custom replies queue suffix (optional, defaults to "replies")
 }
 ```
 
@@ -283,57 +293,58 @@ type AsyncQuery[T any] struct {
 
 ### ReactiveCommons Methods
 
-#### Event Methods
+The `ReactiveCommons` struct provides these core methods for sending events, commands, and queries:
 
 ```go
-// Emit a domain event
+// Initialize ReactiveCommons with domain configuration
+NewReactiveCommons(domainCfg DomainDefinition) *ReactiveCommons
+
+// Start listening for messages based on registered handlers
+Start(registry *Registry)
+
+// Send a domain event
 EmitEvent(event DomainEvent[any], opts EventOptions) error
 
-// Listen to a single event
-ListenEvent(eventName string, handler EventHandler)
-
-// Listen to multiple events
-ListenEvents(handlers map[string]EventHandler)
-```
-
-#### Command Methods
-
-```go
 // Send a command to a target service
 SendCommand(command Command[any], opts CommandOptions) error
 
-// Handle a single command
-HandleCommand(commandName string, handler CommandHandler)
-
-// Handle multiple commands
-HandleCommands(handlers map[string]CommandHandler)
-```
-
-#### Query Methods
-
-```go
 // Send a query and wait for response
 SendQueryRequest(request AsyncQuery[any], opts RequestReplyOptions) ([]byte, error)
 ```
 
 ### Registry Methods
 
+The `Registry` is used to register message handlers. Handlers must be registered BEFORE calling `rc.Start()`.
+
 ```go
-// Create a new registry
+// Create a new empty registry
 NewRegistry() *Registry
 
-// Register event handlers
+// Event handler registration
 ListenEvent(eventName string, handler EventHandler)
 ListenEvents(handlers map[string]EventHandler)
 ListenEventTyped[T any](registry *Registry, eventName string, handler func(event T) error)
 
-// Register command handlers
+// Command handler registration
 HandleCommand(commandName string, handler CommandHandler)
 HandleCommands(handlers map[string]CommandHandler)
 
-// Register query handlers
-ServeQuery(resource string, handler QueryHandler)
+// Query handler registration
+ServeQuery(resource string, handler QueryHandler) error
 ServeQueries(handlers map[string]QueryHandler)
+```
+
+### Handler Function Signatures
+
+```go
+// EventHandler - receives domain events
+type EventHandler func(event any) error
+
+// CommandHandler - receives and processes commands
+type CommandHandler func(command any) error
+
+// QueryHandler - receives queries and returns responses
+type QueryHandler func(query any) (any, error)
 ```
 
 ## Complete Example
@@ -388,7 +399,7 @@ func main() {
     // Create ReactiveCommons instance
     rc := rcommons.NewReactiveCommons(config)
 
-    // Create registry
+    // Create registry and register all handlers BEFORE calling Start()
     registry := rcommons.NewRegistry()
 
     // Register event handlers
@@ -407,10 +418,10 @@ func main() {
     // Register query handlers
     registry.ServeQuery("user.get", func(query any) (any, error) {
         q := query.(rcommons.AsyncQuery[any])
-        queryData := q.QueryData.(map[string]interface{})
+        queryData := q.QueryData.(GetUserQuery)
         
         user := User{
-            ID:       queryData["UserID"].(string),
+            ID:       queryData.UserID,
             Username: "john_doe",
             Email:    "john@example.com",
         }
@@ -418,7 +429,7 @@ func main() {
         return user, nil
     })
 
-    // Start the service
+    // Start the service - this initializes message listeners based on registered handlers
     rc.Start(registry)
 
     // Emit an event
@@ -436,20 +447,92 @@ func main() {
         log.Printf("Failed to emit event: %v", err)
     }
 
+    // Send a command
+    command := rcommons.Command[any]{
+        Name:      "create.order",
+        CommandId: uuid.New().String(),
+        Data: CreateOrder{
+            OrderID:    "ORD-001",
+            CustomerID: "CUST-123",
+            Amount:     99.99,
+        },
+    }
+
+    err = rc.SendCommand(command, rcommons.CommandOptions{
+        TargetName: "order-service",
+        Domain:     "order-service",
+    })
+    if err != nil {
+        log.Printf("Failed to send command: %v", err)
+    }
+
+    // Send a query
+    query := rcommons.AsyncQuery[any]{
+        Resource: "user.get",
+        QueryData: GetUserQuery{UserID: "123"},
+    }
+
+    response, err := rc.SendQueryRequest(query, rcommons.RequestReplyOptions{
+        TargetName: "user-service",
+        Domain:     "order-service",
+    })
+    if err != nil {
+        log.Printf("Failed to send query: %v", err)
+    } else {
+        var user User
+        json.Unmarshal(response, &user)
+        log.Printf("Received user: %v", user)
+    }
+
     // Keep the service running
     select {}
 }
 ```
 
+## Initialization Order
+
+It's important to follow the correct initialization order when using Reactive Commons:
+
+1. **Create ReactiveCommons instance** with domain configuration
+   ```go
+   rc := rcommons.NewReactiveCommons(config)
+   ```
+
+2. **Create a Registry** and register all handlers
+   ```go
+   registry := rcommons.NewRegistry()
+   
+   // Register event listeners
+   registry.ListenEvent("event.name", handler)
+   
+   // Register command handlers
+   registry.HandleCommand("command.name", handler)
+   
+   // Register query handlers
+   registry.ServeQuery("query.resource", handler)
+   ```
+
+3. **Start the service** to activate message listeners
+   ```go
+   rc.Start(registry)
+   ```
+
+**Important**: Handlers must be registered before calling `rc.Start()`. The `Start()` method uses the registry to determine which message types to listen for and sets up the necessary RabbitMQ topology.
+
 ## Architecture
 
-The library is organized into focused components:
+The library separates concerns into focused components:
 
-- **EventPublisher/EventListener**: Handle domain event publishing and consumption
-- **CommandSender/CommandReceiver**: Handle command sending and processing
-- **QueryClient/QueryServer**: Handle request-reply query patterns
-- **TopologyManager**: Manages RabbitMQ topology (exchanges, queues, bindings)
-- **Registry**: Central registry for all handlers
+- **EventPublisher**: Publishes domain events to RabbitMQ
+- **EventListener**: Consumes domain events and invokes registered handlers
+- **CommandSender**: Sends commands to target services
+- **CommandReceiver**: Receives commands and invokes registered handlers
+- **QueryClient**: Sends queries and receives responses (request-reply pattern)
+- **QueryServer**: Receives queries and serves responses
+- **TopologyManager**: Manages RabbitMQ exchanges, queues, and bindings
+- **Registry**: Central registry for storing and managing all handlers
+
+The `ReactiveCommons` struct serves as the main facade, coordinating these components and exposing a simple API for publishing events, sending commands, and sending queries.
 
 ## Default Naming Conventions
 
@@ -465,10 +548,30 @@ If not specified, the library uses these defaults:
 
 ## Error Handling
 
-All handler functions should return errors. The library will:
-- **Nack and requeue** messages when handlers return errors (for retry)
-- **Nack without requeue** messages that fail to unmarshal
-- **Ack** messages that are processed successfully
+All handler functions should return an error. The library uses the following acknowledgment strategy:
+
+- **Handler returns nil**: Message is acknowledged (ack) - removed from queue
+- **Handler returns error**: Message is nacked with requeue flag - message goes back to queue for retry
+- **Message unmarshal fails**: Message is nacked without requeue - message is discarded
+
+This ensures reliable message processing with automatic retries for handler failures, while discarding malformed messages.
+
+### Example Error Handling
+
+```go
+registry.HandleCommand("process.order", func(command any) error {
+    cmd := command.(rcommons.Command[any])
+    
+    // Process command
+    err := processOrder(cmd.Data)
+    if err != nil {
+        log.Printf("Failed to process order: %v", err)
+        return err  // Will cause message to be requeued
+    }
+    
+    return nil  // Message will be acknowledged
+})
+```
 
 ## Testing
 

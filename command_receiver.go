@@ -8,42 +8,36 @@ import (
 	"github.com/rabbitmq/amqp091-go"
 )
 
-type RabbitCommandReceiver struct {
-	client   *rabbit.RabbitClient
-	domain   DomainDefinition
-	registry *Registry
+type rabbitCommandReceiver struct {
+	client    RabbitClientInterface
+	domain    DomainDefinition
+	registry  *Registry
+	queueName string
 }
 
-// NewCommandReceiver creates a new RabbitCommandReceiver instance with the provided client, domain configuration, and handler registry.
-// It returns a pointer to the initialized RabbitCommandReceiver that can be used to handle incoming commands.
-func NewCommandReceiver(client *rabbit.RabbitClient, domain DomainDefinition, registry *Registry) *RabbitCommandReceiver {
-	return &RabbitCommandReceiver{
-		client:   client,
-		domain:   domain,
-		registry: registry,
+// newCommandReceiver creates a new rabbitCommandReceiver instance with the provided client, domain configuration, and handler registry.
+// It returns a pointer to the initialized rabbitCommandReceiver that can be used to handle incoming commands.
+func newCommandReceiver(client RabbitClientInterface, domain DomainDefinition, registry *Registry) *rabbitCommandReceiver {
+	return &rabbitCommandReceiver{
+		client:    client,
+		domain:    domain,
+		registry:  registry,
+		queueName: calculateQueueName(domain.Name, domain.DirectCommandsSuffix, false),
 	}
 }
 
-func (r *RabbitCommandReceiver) HandleCommands(handlers map[string]CommandHandler) {
-	for commandName, handler := range handlers {
-		r.HandleCommand(commandName, handler)
-	}
-}
+func (r *rabbitCommandReceiver) startListeningCommands() {
 
-func (r *RabbitCommandReceiver) HandleCommand(commandName string, handler CommandHandler) {
 	rmqChannel, _ := r.client.GetChannel(ChannelForCommands)
 
-	queueName := calculateQueueName(r.domain.Name, r.domain.DirectCommandsSuffix, false)
-
-	// Wrap channel for topology operations
 	wrappedChannel := &rabbit.RabbitChannel{Channel: rmqChannel}
-	err := rabbit.Bind(wrappedChannel, queueName, r.domain.Name, r.domain.DirectExchange, true)
+	err := rabbit.Bind(wrappedChannel, r.queueName, r.domain.Name, r.domain.DirectExchange, true)
 	if err != nil {
 		log.Panicf("Failed to bind queue: %v", err)
 	}
 
 	msgs, err := rmqChannel.Consume(
-		queueName,
+		r.queueName,
 		r.domain.Name,
 		false,
 		false,
@@ -62,7 +56,7 @@ func (r *RabbitCommandReceiver) HandleCommand(commandName string, handler Comman
 	}()
 }
 
-func (r *RabbitCommandReceiver) processCommandMessage(msg amqp091.Delivery) {
+func (r *rabbitCommandReceiver) processCommandMessage(msg amqp091.Delivery) {
 	var command Command[any]
 	err := json.Unmarshal(msg.Body, &command)
 	if err != nil {

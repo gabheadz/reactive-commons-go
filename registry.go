@@ -48,3 +48,14 @@ func (r *Registry) ServeQueries(handlers map[string]QueryHandler) {
 		r.ServeQuery(resource, handler)
 	}
 }
+
+func (r *Registry) HasEventHandler(eventName string) bool {
+	_, exists := r.EventHandlers[eventName]
+	return exists
+}
+
+func (r *Registry) Clear() {
+	r.EventHandlers = make(map[string]EventHandler)
+	r.CommandHandlers = make(map[string]CommandHandler)
+	r.QueryHandlers = make(map[string]QueryHandler)	
+}

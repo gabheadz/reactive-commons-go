@@ -5,23 +5,21 @@ import (
 	"fmt"
 	"log"
 	"time"
-
-	"github.com/bancolombia/reactive-commons-go/internal/rabbit"
 )
 
-type RabbitCommandSender struct {
-	client *rabbit.RabbitClient
+type rabbitCommandSender struct {
+	client RabbitClientInterface
 	domain DomainDefinition
 }
 
-func NewCommandSender(client *rabbit.RabbitClient, domain DomainDefinition) *RabbitCommandSender {
-	return &RabbitCommandSender{
+func newCommandSender(client RabbitClientInterface, domain DomainDefinition) *rabbitCommandSender {
+	return &rabbitCommandSender{
 		client: client,
 		domain: domain,
 	}
 }
 
-func (s *RabbitCommandSender) SendCommand(command Command[any], opts CommandOptions) error {
+func (s *rabbitCommandSender) sendCommand(command Command[any], opts CommandOptions) error {
 	if command.Name == "" || opts.Domain == "" || opts.TargetName == "" {
 		return fmt.Errorf("command name, domain, and target are required")
 	}

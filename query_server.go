@@ -6,41 +6,35 @@ import (
 	"log"
 	"time"
 
-	"github.com/bancolombia/reactive-commons-go/internal/rabbit"
 	"github.com/rabbitmq/amqp091-go"
 )
 
-type RabbitQueryServer struct {
-	client   *rabbit.RabbitClient
-	domain   DomainDefinition
-	registry *Registry
+type rabbitQueryServer struct {
+	client    RabbitClientInterface
+	domain    DomainDefinition
+	registry  *Registry
+	queueName string
 }
 
-func NewQueryServer(client *rabbit.RabbitClient, domain DomainDefinition, registry *Registry) *RabbitQueryServer {
-	return &RabbitQueryServer{
-		client:   client,
-		domain:   domain,
-		registry: registry,
+func newQueryServer(client RabbitClientInterface, domain DomainDefinition, registry *Registry) *rabbitQueryServer {
+	return &rabbitQueryServer{
+		client:    client,
+		domain:    domain,
+		registry:  registry,
+		queueName: calculateQueueName(domain.Name, domain.DirectQuerySuffix, false),
 	}
 }
 
-func (s *RabbitQueryServer) ServeQueries(handlers map[string]QueryHandler) {
-	for resource, handler := range handlers {
-		s.ServeQuery(resource, handler)
-	}
-}
-
-func (s *RabbitQueryServer) ServeQuery(resource string, handler QueryHandler) error {
+func (s *rabbitQueryServer) serveQueries() error {
 	rmqChannel, err := s.client.GetChannel(ChannelForQueries)
 	if err != nil {
 		return err
 	}
 
-	queueName := calculateQueueName(s.domain.Name, s.domain.DirectQuerySuffix, false)
-	log.Printf("Creating consumer for queue %s to process queries for resource %s", queueName, resource)
+	log.Printf("Creating consumer for queue %s to process queries", s.queueName)
 
 	msgs, err := rmqChannel.Consume(
-		queueName,
+		s.queueName,
 		s.domain.globalBindID,
 		false,
 		false,
@@ -61,7 +55,7 @@ func (s *RabbitQueryServer) ServeQuery(resource string, handler QueryHandler) er
 	return nil
 }
 
-func (s *RabbitQueryServer) processQueryMessage(msg amqp091.Delivery) {
+func (s *rabbitQueryServer) processQueryMessage(msg amqp091.Delivery) {
 	var query AsyncQuery[any]
 
 	if err := json.Unmarshal(msg.Body, &query); err != nil {
@@ -92,7 +86,7 @@ func (s *RabbitQueryServer) processQueryMessage(msg amqp091.Delivery) {
 	msg.Ack(true)
 }
 
-func (s *RabbitQueryServer) sendReply(replyTo string, correlationId string, responseData any) error {
+func (s *rabbitQueryServer) sendReply(replyTo string, correlationId string, responseData any) error {
 	dataBytes, err := json.Marshal(responseData)
 	if err != nil {
 		log.Printf("Failed to marshal response: %v", err)

@@ -8,46 +8,50 @@ import (
 	"github.com/rabbitmq/amqp091-go"
 )
 
-type RabbitEventListener struct {
-	client   *rabbit.RabbitClient
-	domain   DomainDefinition
-	registry *Registry
+type rabbitEventListener struct {
+	client    RabbitClientInterface
+	domain    DomainDefinition
+	registry  *Registry
+	queueName string
 }
 
-// NewEventListener creates a new RabbitEventListener instance with the provided RabbitMQ client,
+// newEventListener creates a new rabbitEventListener instance with the provided RabbitMQ client,
 // domain definition, and event handler registry. The returned listener can be used to
 // subscribe to and process domain events from RabbitMQ queues.
-func NewEventListener(client *rabbit.RabbitClient, domain DomainDefinition, registry *Registry) *RabbitEventListener {
-	return &RabbitEventListener{
-		client:   client,
-		domain:   domain,
-		registry: registry,
+func newEventListener(client RabbitClientInterface, domain DomainDefinition, registry *Registry) *rabbitEventListener {
+	return &rabbitEventListener{
+		client:    client,
+		domain:    domain,
+		registry:  registry,
+		queueName: calculateQueueName(domain.Name, domain.DomainEventsSuffix, false),
 	}
 }
 
-func (l *RabbitEventListener) ListenEvents(handlers map[string]EventHandler) {
-	for eventName, handler := range handlers {
-		l.ListenEvent(eventName, handler)
-	}
-}
-
-func (l *RabbitEventListener) ListenEvent(eventName string, handler EventHandler) {
+func (l *rabbitEventListener) setupBindings() {
 	rmqChannel, err := l.client.GetChannel(ChannelForEvents)
 	if err != nil {
 		log.Panicf("Failed to get channel: %v", err)
 	}
 
-	queueName := calculateQueueName(l.domain.Name, l.domain.DomainEventsSuffix, false)
+	for eventName := range l.registry.EventHandlers {
+		// Wrap channel for topology operations
+		wrappedChannel := &rabbit.RabbitChannel{Channel: rmqChannel}
+		err = rabbit.Bind(wrappedChannel, l.queueName, eventName, l.domain.DomainEventsExchange, true)
+		if err != nil {
+			log.Panicf("Failed to bind queue: %v", err)
+		}
+	}
+}
 
-	// Wrap channel for topology operations
-	wrappedChannel := &rabbit.RabbitChannel{Channel: rmqChannel}
-	err = rabbit.Bind(wrappedChannel, queueName, eventName, l.domain.DomainEventsExchange, true)
+func (l *rabbitEventListener) startListeningEvents() {
+
+	rmqChannel, err := l.client.GetChannel(ChannelForEvents)
 	if err != nil {
-		log.Panicf("Failed to bind queue: %v", err)
+		log.Panicf("Failed to get channel: %v", err)
 	}
 
 	msgs, err := rmqChannel.Consume(
-		queueName,
+		l.queueName,
 		"",
 		false,
 		false,
@@ -61,21 +65,22 @@ func (l *RabbitEventListener) ListenEvent(eventName string, handler EventHandler
 
 	go func() {
 		for msg := range msgs {
-			l.processEventMessage(eventName, msg)
+			l.processEventMessage(msg)
 		}
 	}()
 }
 
-func (l *RabbitEventListener) processEventMessage(eventName string, msg amqp091.Delivery) {
+func (l *rabbitEventListener) processEventMessage(msg amqp091.Delivery) {
 	var event DomainEvent[any]
 	err := json.Unmarshal(msg.Body, &event)
+
 	if err != nil {
 		log.Printf("Failed to unmarshal event: %v", err)
 		msg.Nack(false, false)
 		return
 	}
 
-	evtHandler, exists := l.registry.EventHandlers[eventName]
+	evtHandler, exists := l.registry.EventHandlers[event.Name]
 	if exists {
 		errEvt := evtHandler(event)
 		if errEvt != nil {

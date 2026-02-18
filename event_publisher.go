@@ -5,23 +5,21 @@ import (
 	"fmt"
 	"log"
 	"time"
-
-	"github.com/bancolombia/reactive-commons-go/internal/rabbit"
 )
 
-type RabbitEventPublisher struct {
-	client *rabbit.RabbitClient
+type rabbitEventPublisher struct {
+	client RabbitClientInterface
 	domain DomainDefinition
 }
 
-func NewEventPublisher(client *rabbit.RabbitClient, domain DomainDefinition) *RabbitEventPublisher {
-	return &RabbitEventPublisher{
+func newEventPublisher(client RabbitClientInterface, domain DomainDefinition) *rabbitEventPublisher {
+	return &rabbitEventPublisher{
 		client: client,
 		domain: domain,
 	}
 }
 
-func (p *RabbitEventPublisher) EmitEvent(event DomainEvent[any], opts EventOptions) error {
+func (p *rabbitEventPublisher) emitEvent(event DomainEvent[any], opts EventOptions) error {
 	if event.Name == "" || opts.Domain == "" {
 		return fmt.Errorf("event name and domain are required")
 	}

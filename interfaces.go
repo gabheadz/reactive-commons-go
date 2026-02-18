@@ -49,9 +49,9 @@ type QueryServer interface {
 	ServeQueries(handlers map[string]QueryHandler)
 }
 
-// TopologyManager handles RabbitMQ topology setup
-type TopologyManager interface {
-	SetupDomainEvents() error
-	SetupDirectCommands() error
-	SetupAsyncQueries() error
+// topologyManager handles RabbitMQ topology setup
+type topologyManager interface {
+	setupDomainEvents() error
+	setupDirectCommands() error
+	setupAsyncQueries() error
 }

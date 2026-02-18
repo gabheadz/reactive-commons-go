@@ -27,13 +27,13 @@ type ReactiveCommons struct {
 	Domain          DomainDefinition
 	rclient         *rabbit.RabbitClient
 	registry        *Registry
-	eventPublisher  *RabbitEventPublisher
-	eventListener   *RabbitEventListener
-	commandSender   *RabbitCommandSender
-	commandReceiver *RabbitCommandReceiver
-	queryClient     *RabbitQueryClient
-	queryServer     *RabbitQueryServer
-	topologyManager *RabbitTopologyManager
+	eventPublisher  *rabbitEventPublisher
+	eventListener   *rabbitEventListener
+	commandSender   *rabbitCommandSender
+	commandReceiver *rabbitCommandReceiver
+	queryClient     *rabbitQueryClient
+	queryServer     *rabbitQueryServer
+	topologyManager *rabbitTopologyManager
 }
 
 func NewReactiveCommons(domainCfg DomainDefinition) *ReactiveCommons {
@@ -83,13 +83,13 @@ func NewReactiveCommons(domainCfg DomainDefinition) *ReactiveCommons {
 	}
 
 	// Initialize components - pass pointer to rc.Domain so they all share the same instance
-	rc.eventPublisher = NewEventPublisher(cli, rc.Domain)
-	rc.eventListener = NewEventListener(cli, rc.Domain, registry)
-	rc.commandSender = NewCommandSender(cli, rc.Domain)
-	rc.commandReceiver = NewCommandReceiver(cli, rc.Domain, registry)
-	rc.queryClient = NewQueryClient(cli, rc.Domain)
-	rc.queryServer = NewQueryServer(cli, rc.Domain, registry)
-	rc.topologyManager = NewTopologyManager(cli, &rc.Domain)
+	rc.eventPublisher = newEventPublisher(cli, rc.Domain)
+	rc.eventListener = newEventListener(cli, rc.Domain, registry)
+	rc.commandSender = newCommandSender(cli, rc.Domain)
+	rc.commandReceiver = newCommandReceiver(cli, rc.Domain, registry)
+	rc.queryClient = newQueryClient(cli, rc.Domain)
+	rc.queryServer = newQueryServer(cli, rc.Domain, registry)
+	rc.topologyManager = newTopologyManager(cli, &rc.Domain)
 
 	return rc
 }
@@ -97,6 +97,7 @@ func NewReactiveCommons(domainCfg DomainDefinition) *ReactiveCommons {
 var once sync.Once
 
 func (rc *ReactiveCommons) Start(registry *Registry) {
+	// this can be called only once, subsequent calls will be ignored
 	once.Do(func() {
 		rc.Domain.UseDomainEvents = len(registry.EventHandlers) > 0
 		rc.Domain.UseDirectQueries = len(registry.QueryHandlers) > 0
@@ -104,54 +105,46 @@ func (rc *ReactiveCommons) Start(registry *Registry) {
 
 		rc.registry = registry
 
-		// Update registry in components
+		// Set registry in components
 		rc.eventListener.registry = registry
 		rc.commandReceiver.registry = registry
 		rc.queryServer.registry = registry
 
-		err := rc.setupTopology()
+		err := rc.setupTopologyAndListeners()
 		if err != nil {
 			log.Panicf("Failed to setup topology: %v", err)
 			return
 		}
-
-		for eventName, handler := range rc.registry.EventHandlers {
-			rc.eventListener.ListenEvent(eventName, handler)
-		}
-
-		for commandName, handler := range rc.registry.CommandHandlers {
-			rc.commandReceiver.HandleCommand(commandName, handler)
-		}
-
-		for resource, handler := range rc.registry.QueryHandlers {
-			rc.queryServer.ServeQuery(resource, handler)
-		}
 	})
 }
 
-func (rc *ReactiveCommons) setupTopology() error {
+func (rc *ReactiveCommons) setupTopologyAndListeners() error {
 	if rc.Domain.UseDomainEvents {
-		err := rc.topologyManager.SetupDomainEvents()
+		err := rc.topologyManager.setupDomainEvents()
 		if err != nil {
 			log.Printf("Failed to configure for domain events: %v", err)
 			return err
 		}
+		rc.eventListener.setupBindings()
+		rc.eventListener.startListeningEvents()
 	}
 
 	if rc.Domain.UseDirectCommands {
-		err := rc.topologyManager.SetupDirectCommands()
+		err := rc.topologyManager.setupDirectCommands()
 		if err != nil {
 			log.Printf("Failed to configure for direct commands: %v", err)
 			return err
 		}
+		rc.commandReceiver.startListeningCommands()
 	}
 
 	if rc.Domain.UseDirectQueries {
-		err := rc.topologyManager.SetupAsyncQueries()
+		err := rc.topologyManager.setupAsyncQueries()
 		if err != nil {
 			log.Printf("Failed to configure for async queries: %v", err)
 			return err
 		}
+		rc.queryServer.serveQueries()
 	}
 
 	return nil
@@ -162,15 +155,7 @@ func (rc *ReactiveCommons) setupTopology() error {
 // -------------------------------
 
 func (rc *ReactiveCommons) EmitEvent(event DomainEvent[any], opts EventOptions) error {
-	return rc.eventPublisher.EmitEvent(event, opts)
-}
-
-func (rc *ReactiveCommons) ListenEvents(handlers map[string]EventHandler) {
-	rc.eventListener.ListenEvents(handlers)
-}
-
-func (rc *ReactiveCommons) ListenEvent(eventName string, handler EventHandler) {
-	rc.eventListener.ListenEvent(eventName, handler)
+	return rc.eventPublisher.emitEvent(event, opts)
 }
 
 // -------------------------------
@@ -178,15 +163,7 @@ func (rc *ReactiveCommons) ListenEvent(eventName string, handler EventHandler) {
 // -------------------------------
 
 func (rc *ReactiveCommons) SendCommand(command Command[any], opts CommandOptions) error {
-	return rc.commandSender.SendCommand(command, opts)
-}
-
-func (rc *ReactiveCommons) HandleCommands(handlers map[string]CommandHandler) {
-	rc.commandReceiver.HandleCommands(handlers)
-}
-
-func (rc *ReactiveCommons) HandleCommand(commandName string, handler CommandHandler) {
-	rc.commandReceiver.HandleCommand(commandName, handler)
+	return rc.commandSender.sendCommand(command, opts)
 }
 
 // -------------------------------
@@ -194,5 +171,5 @@ func (rc *ReactiveCommons) HandleCommand(commandName string, handler CommandHand
 // -------------------------------
 
 func (rc *ReactiveCommons) SendQueryRequest(request AsyncQuery[any], opts RequestReplyOptions) ([]byte, error) {
-	return rc.queryClient.SendQueryRequest(request, opts)
+	return rc.queryClient.sendQueryRequest(request, opts)
 }
