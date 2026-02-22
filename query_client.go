@@ -8,20 +8,28 @@ import (
 )
 
 type rabbitQueryClient struct {
-	client RabbitClientInterface
-	domain DomainDefinition
+	clientSending   RabbitClientInterface
+	clientReceiving RabbitClientInterface
+	domain          *DomainDefinition
+	queueName       string
 }
 
-func newQueryClient(client RabbitClientInterface, domain DomainDefinition) *rabbitQueryClient {
+func newQueryClient(clientSending RabbitClientInterface, clientReceiving RabbitClientInterface, domain *DomainDefinition) *rabbitQueryClient {
+	_, err := clientSending.CreateChannel(ChannelForQueries)
+	if err != nil {
+		log.Panicf("Failed to create channel: %v", err)
+	}
 	return &rabbitQueryClient{
-		client: client,
-		domain: domain,
+		clientSending:   clientSending,
+		clientReceiving: clientReceiving,
+		domain:          domain,
+		queueName:       calculateQueueName(domain.Name, domain.DirectQuerySuffix, false),
 	}
 }
 
 func (c *rabbitQueryClient) sendQueryRequest(request AsyncQuery[any], opts RequestReplyOptions) ([]byte, error) {
-	if c.client == nil {
-		return nil, fmt.Errorf("client is not initialized")
+	if c.clientSending == nil || c.clientReceiving == nil {
+		return nil, fmt.Errorf("clients not initialized")
 	}
 
 	if request.Resource == "" {
@@ -46,20 +54,26 @@ func (c *rabbitQueryClient) sendQueryRequest(request AsyncQuery[any], opts Reque
 		"message_id":        c.domain.globalBindID,
 	}
 
-	queueName := calculateQueueName(c.domain.Name, c.domain.DirectQuerySuffix, false)
-	err = c.client.PublishJson(c.domain.DirectExchange, queueName, cmdBytes, ChannelForQueries, headers)
+	err = c.clientSending.PublishJson(c.domain.DirectExchange, c.queueName, cmdBytes, ChannelForQueries, headers)
 	if err != nil {
 		log.Printf("Failed send request: %v", err)
 		return nil, err
 	}
-	log.Printf("Sent Query: %v", 1)
 
-	body, err := c.client.ConsumeOne(ChannelForReplies, c.domain.globalRepliesID, c.domain.globalBindID,
-		time.Duration(3)*time.Second)
+	body, err := c.clientReceiving.ConsumeOne(ChannelForReplies, c.domain.globalRepliesID,
+		c.domain.globalBindID,
+		maxWaitDuration(opts))
 	if err != nil {
 		log.Printf("Failed to consume reply: %v", err)
 		return nil, err
 	}
 
 	return body, nil
+}
+
+func maxWaitDuration(opts RequestReplyOptions) time.Duration {
+	if opts.MaxWait <= 0 {
+		return time.Duration(3) * time.Second
+	}
+	return time.Duration(opts.MaxWait) * time.Second
 }

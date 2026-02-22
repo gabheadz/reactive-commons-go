@@ -83,7 +83,7 @@ func TestReactiveCommons_EmitEvent_Success(t *testing.T) {
 		return nil
 	}
 
-	rc.eventPublisher = newEventPublisher(mockClient, domain)
+	rc.eventPublisher = newEventPublisher(mockClient, &domain)
 
 	event := DomainEvent[any]{
 		Name:    "user.created",
@@ -127,7 +127,7 @@ func TestReactiveCommons_EmitEvent_Error(t *testing.T) {
 		return expectedError
 	}
 
-	rc.eventPublisher = newEventPublisher(mockClient, domain)
+	rc.eventPublisher = newEventPublisher(mockClient, &domain)
 
 	event := DomainEvent[any]{
 		Name:    "user.created",
@@ -150,6 +150,20 @@ func TestReactiveCommons_EmitEvent_Error(t *testing.T) {
 	}
 }
 
+func TestReactiveCommons_EmitEvent_NotInitialized(t *testing.T) {
+	rc := &ReactiveCommons{}
+
+	err := rc.EmitEvent(DomainEvent[any]{Name: "user.created"}, EventOptions{Domain: "test"})
+
+	if err == nil {
+		t.Fatal("Expected error when event publisher is not initialized")
+	}
+
+	if err.Error() != "event publisher is not initialized; call Start first" {
+		t.Errorf("Unexpected error message: %v", err)
+	}
+}
+
 func TestReactiveCommons_SendCommand_Success(t *testing.T) {
 	domain := DomainDefinition{
 		Name:           "test-app",
@@ -168,7 +182,7 @@ func TestReactiveCommons_SendCommand_Success(t *testing.T) {
 		return nil
 	}
 
-	rc.commandSender = newCommandSender(mockClient, domain)
+	rc.commandSender = newCommandSender(mockClient, &domain)
 
 	command := Command[any]{
 		Name:      "create.user",
@@ -209,7 +223,7 @@ func TestReactiveCommons_SendCommand_Error(t *testing.T) {
 		return expectedError
 	}
 
-	rc.commandSender = newCommandSender(mockClient, domain)
+	rc.commandSender = newCommandSender(mockClient, &domain)
 
 	command := Command[any]{
 		Name:      "create.user",
@@ -230,6 +244,20 @@ func TestReactiveCommons_SendCommand_Error(t *testing.T) {
 
 	if err != expectedError {
 		t.Errorf("Expected error '%v', got '%v'", expectedError, err)
+	}
+}
+
+func TestReactiveCommons_SendCommand_NotInitialized(t *testing.T) {
+	rc := &ReactiveCommons{}
+
+	err := rc.SendCommand(Command[any]{Name: "cmd"}, CommandOptions{Domain: "test", TargetName: "target"})
+
+	if err == nil {
+		t.Fatal("Expected error when command sender is not initialized")
+	}
+
+	if err.Error() != "command sender is not initialized; call Start first" {
+		t.Errorf("Unexpected error message: %v", err)
 	}
 }
 
@@ -256,7 +284,7 @@ func TestReactiveCommons_SendQueryRequest_Success(t *testing.T) {
 		return expectedResponse, nil
 	}
 
-	rc.queryClient = newQueryClient(mockClient, domain)
+	rc.queryClient = newQueryClient(mockClient, mockClient, &domain)
 
 	query := AsyncQuery[any]{
 		Resource:  "user.info",
@@ -298,7 +326,7 @@ func TestReactiveCommons_SendQueryRequest_Error(t *testing.T) {
 		return expectedError
 	}
 
-	rc.queryClient = newQueryClient(mockClient, domain)
+	rc.queryClient = newQueryClient(mockClient, mockClient, &domain)
 
 	query := AsyncQuery[any]{
 		Resource:  "user.info",
@@ -318,6 +346,20 @@ func TestReactiveCommons_SendQueryRequest_Error(t *testing.T) {
 
 	if err != expectedError {
 		t.Errorf("Expected error '%v', got '%v'", expectedError, err)
+	}
+}
+
+func TestReactiveCommons_SendQueryRequest_NotInitialized(t *testing.T) {
+	rc := &ReactiveCommons{}
+
+	_, err := rc.SendQueryRequest(AsyncQuery[any]{Resource: "user.info"}, RequestReplyOptions{Domain: "test", TargetName: "target"})
+
+	if err == nil {
+		t.Fatal("Expected error when query client is not initialized")
+	}
+
+	if err.Error() != "query client is not initialized; call Start first" {
+		t.Errorf("Unexpected error message: %v", err)
 	}
 }
 

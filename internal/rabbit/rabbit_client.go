@@ -3,6 +3,7 @@ package rabbit
 import (
 	"fmt"
 	"log"
+	"strconv"
 	"time"
 
 	"github.com/google/uuid"
@@ -80,6 +81,11 @@ func (r *RabbitClient) CreateChannel(name string) (*amqp.Channel, error) {
 func (r *RabbitClient) GetChannel(name string) (*amqp.Channel, error) {
 	channel := r.channels[name]
 	if channel == nil {
+		if len(r.channels) == 0 {
+			log.Printf("No channels available in RabbitMQ client")
+		} else {
+			log.Printf("RabbitMQ channel not found. Available channels: %s", r.ListChannels())
+		}
 		return nil, fmt.Errorf("RabbitMQ channel not found: %s", name)
 	}
 
@@ -94,6 +100,7 @@ func (r *RabbitClient) PublishJson(exchange, key string, msg []byte, channelKey 
 
 	channel, err := r.GetChannel(channelKey)
 	if err != nil {
+		log.Printf("Failed to get channel: %v", err)
 		return err
 	}
 
@@ -123,6 +130,46 @@ func (r *RabbitClient) PublishJson(exchange, key string, msg []byte, channelKey 
 			AppId:           r.AppName,
 			Body:            msg,
 			CorrelationId:   messageId,
+		},
+	)
+	if err != nil {
+		return err
+	}
+
+	return nil
+}
+
+func (r *RabbitClient) PublishEvent(exchange, key string, msg []byte, channelKey string, sourceApplication, messageID string, timestamp int64) error {
+	channel, err := r.GetChannel(channelKey)
+	if err != nil {
+		log.Printf("Failed to get channel: %v", err)
+		return err
+	}
+
+	if messageID == "" {
+		messageID = uuid.NewString()
+	}
+
+	err = channel.Publish(
+		exchange,
+		key,
+		true,
+		false,
+		amqp.Publishing{
+			Headers: amqp.Table{
+				"sourceApplication": sourceApplication,
+				"delivery_mode":     "persistent",
+				"message_id":        messageID,
+				"timestamp":         strconv.FormatInt(timestamp, 10),
+				"app_id":            sourceApplication,
+			},
+			ContentType:     "application/json",
+			ContentEncoding: "UTF-8",
+			DeliveryMode:    amqp.Persistent,
+			Priority:        0,
+			AppId:           r.AppName,
+			Body:            msg,
+			CorrelationId:   messageID,
 		},
 	)
 	if err != nil {
@@ -226,6 +273,14 @@ func (r *RabbitClient) ConsumeOne(channelKey string, queueName string, correlati
 
 		msg.Nack(false, true)
 	}
+}
+
+func (r *RabbitClient) ListChannels() []string {
+	channels := make([]string, 0, len(r.channels))
+	for name := range r.channels {
+		channels = append(channels, name)
+	}
+	return channels
 }
 
 func (r *RabbitClient) Close() error {

@@ -1,6 +1,7 @@
 package rcommons
 
 import (
+	"fmt"
 	"log"
 	"sync"
 
@@ -25,8 +26,9 @@ const ChannelForReplies string = "ChannelForReplies"
 
 type ReactiveCommons struct {
 	Domain          DomainDefinition
-	rclient         *rabbit.RabbitClient
-	registry        *Registry
+	connections     map[string]*rabbit.RabbitClient
+	registry        Registry
+	startOnce       sync.Once
 	eventPublisher  *rabbitEventPublisher
 	eventListener   *rabbitEventListener
 	commandSender   *rabbitCommandSender
@@ -40,14 +42,8 @@ func NewReactiveCommons(domainCfg DomainDefinition) *ReactiveCommons {
 	if domainCfg.Name == "" {
 		log.Panic("invalid domain name")
 	}
-	connAddr := connectionString(domainCfg.ConnectionConfig)
-	cli, _ := rabbit.NewRabbitClient(domainCfg.Name, connAddr)
-	err := cli.Connect()
-	if err != nil {
-		log.Panicf("Failed to connect to RabbitMQ: %v", err)
-	}
 
-	registry := &Registry{}
+	connections := make(map[string]*rabbit.RabbitClient)
 
 	// Setup default names for events, if not provided
 	if domainCfg.DomainEventsExchange == "" {
@@ -77,77 +73,81 @@ func NewReactiveCommons(domainCfg DomainDefinition) *ReactiveCommons {
 	domainCfg.globalRepliesID = calculateQueueName(domainCfg.Name, domainCfg.GlobalRepliesSuffix, true)
 
 	rc := &ReactiveCommons{
-		Domain:   domainCfg,
-		rclient:  cli,
-		registry: registry,
+		Domain:      domainCfg,
+		connections: connections,
 	}
-
-	// Initialize components - pass pointer to rc.Domain so they all share the same instance
-	rc.eventPublisher = newEventPublisher(cli, rc.Domain)
-	rc.eventListener = newEventListener(cli, rc.Domain, registry)
-	rc.commandSender = newCommandSender(cli, rc.Domain)
-	rc.commandReceiver = newCommandReceiver(cli, rc.Domain, registry)
-	rc.queryClient = newQueryClient(cli, rc.Domain)
-	rc.queryServer = newQueryServer(cli, rc.Domain, registry)
-	rc.topologyManager = newTopologyManager(cli, &rc.Domain)
 
 	return rc
 }
 
-var once sync.Once
-
-func (rc *ReactiveCommons) Start(registry *Registry) {
+func (rc *ReactiveCommons) Start(registry Registry) {
 	// this can be called only once, subsequent calls will be ignored
-	once.Do(func() {
-		rc.Domain.UseDomainEvents = len(registry.EventHandlers) > 0
-		rc.Domain.UseDirectQueries = len(registry.QueryHandlers) > 0
-		rc.Domain.UseDirectCommands = len(registry.CommandHandlers) > 0 || len(registry.QueryHandlers) > 0
+	rc.startOnce.Do(func() {
+		err := rc.checkSwitches(registry)
+		if err != nil {
+			log.Panicf("Failed to start ReactiveCommons: %v", err)
+		}
 
 		rc.registry = registry
 
-		// Set registry in components
-		rc.eventListener.registry = registry
-		rc.commandReceiver.registry = registry
-		rc.queryServer.registry = registry
-
-		err := rc.setupTopologyAndListeners()
+		// set up connections
+		connAddr := connectionString(rc.Domain.ConnectionConfig)
+		cli, _ := rabbit.NewRabbitClient(rc.Domain.Name, connAddr)
+		err = cli.Connect()
 		if err != nil {
-			log.Panicf("Failed to setup topology: %v", err)
-			return
+			log.Panicf("Failed to connect to RabbitMQ: %v", err)
+		}
+		rc.connections["sending"] = cli
+
+		//check if separate connection is required for receiving, if so create and connect
+		if rc.Domain.ConnectionConfig.SeparateConnections {
+			cli2, _ := rabbit.NewRabbitClient(rc.Domain.Name, connAddr)
+			err = cli2.Connect()
+			if err != nil {
+				log.Panicf("Failed to connect to RabbitMQ: %v", err)
+			}
+			rc.connections["receiving"] = cli2
+		} else {
+			rc.connections["receiving"] = cli
+		}
+
+		// Initialize topology manager
+		rc.topologyManager = newTopologyManager(&rc.Domain)
+
+		if rc.Domain.UseDomainEvents {
+			err = rc.topologyManager.setupDomainEvents(rc.connections["receiving"], rc.registry.GetEventHandlers())
+			if err != nil {
+				log.Printf("Failed to configure for domain events: %v", err)
+				return
+			}
+			rc.eventListener = newEventListener(rc.connections["receiving"], &rc.Domain, &rc.registry)
+			rc.eventListener.startListeningEvents()
+
+			rc.eventPublisher = newEventPublisher(rc.connections["sending"], &rc.Domain)
+		}
+
+		if rc.Domain.UseDirectCommands || rc.Domain.UseDirectQueries {
+			err := rc.topologyManager.setupDirectCommands(rc.connections["receiving"])
+			if err != nil {
+				log.Printf("Failed to configure for direct commands: %v", err)
+				return
+			}
+			rc.commandReceiver = newCommandReceiver(rc.connections["receiving"], &rc.Domain, &rc.registry)
+			rc.commandReceiver.startListeningCommands()
+			rc.commandSender = newCommandSender(rc.connections["sending"], &rc.Domain)
+
+			if rc.Domain.UseDirectQueries {
+				err := rc.topologyManager.setupAsyncQueries(rc.connections["receiving"])
+				if err != nil {
+					log.Printf("Failed to configure for async queries: %v", err)
+					return
+				}
+				rc.queryServer = newQueryServer(rc.connections["receiving"], &rc.Domain, &rc.registry)
+				rc.queryServer.serveQueries()
+				rc.queryClient = newQueryClient(rc.connections["sending"], rc.connections["receiving"], &rc.Domain)
+			}
 		}
 	})
-}
-
-func (rc *ReactiveCommons) setupTopologyAndListeners() error {
-	if rc.Domain.UseDomainEvents {
-		err := rc.topologyManager.setupDomainEvents()
-		if err != nil {
-			log.Printf("Failed to configure for domain events: %v", err)
-			return err
-		}
-		rc.eventListener.setupBindings()
-		rc.eventListener.startListeningEvents()
-	}
-
-	if rc.Domain.UseDirectCommands {
-		err := rc.topologyManager.setupDirectCommands()
-		if err != nil {
-			log.Printf("Failed to configure for direct commands: %v", err)
-			return err
-		}
-		rc.commandReceiver.startListeningCommands()
-	}
-
-	if rc.Domain.UseDirectQueries {
-		err := rc.topologyManager.setupAsyncQueries()
-		if err != nil {
-			log.Printf("Failed to configure for async queries: %v", err)
-			return err
-		}
-		rc.queryServer.serveQueries()
-	}
-
-	return nil
 }
 
 // -------------------------------
@@ -155,6 +155,9 @@ func (rc *ReactiveCommons) setupTopologyAndListeners() error {
 // -------------------------------
 
 func (rc *ReactiveCommons) EmitEvent(event DomainEvent[any], opts EventOptions) error {
+	if rc.eventPublisher == nil {
+		return fmt.Errorf("event publisher is not initialized; call Start first")
+	}
 	return rc.eventPublisher.emitEvent(event, opts)
 }
 
@@ -163,6 +166,9 @@ func (rc *ReactiveCommons) EmitEvent(event DomainEvent[any], opts EventOptions) 
 // -------------------------------
 
 func (rc *ReactiveCommons) SendCommand(command Command[any], opts CommandOptions) error {
+	if rc.commandSender == nil {
+		return fmt.Errorf("command sender is not initialized; call Start first")
+	}
 	return rc.commandSender.sendCommand(command, opts)
 }
 
@@ -171,5 +177,27 @@ func (rc *ReactiveCommons) SendCommand(command Command[any], opts CommandOptions
 // -------------------------------
 
 func (rc *ReactiveCommons) SendQueryRequest(request AsyncQuery[any], opts RequestReplyOptions) ([]byte, error) {
+	if rc.queryClient == nil {
+		return nil, fmt.Errorf("query client is not initialized; call Start first")
+	}
 	return rc.queryClient.sendQueryRequest(request, opts)
+}
+
+func (rc *ReactiveCommons) checkSwitches(registry Registry) error {
+
+	if !rc.Domain.UseDomainEvents {
+		rc.Domain.UseDomainEvents = registry.EventHandlersCount() > 0
+	}
+	if !rc.Domain.UseDirectQueries {
+		rc.Domain.UseDirectQueries = registry.QueryHandlersCount() > 0
+	}
+	if !rc.Domain.UseDirectCommands {
+		rc.Domain.UseDirectCommands = registry.CommandHandlersCount() > 0 || registry.QueryHandlersCount() > 0
+	}
+
+	if !rc.Domain.UseDomainEvents && !rc.Domain.UseDirectCommands && !rc.Domain.UseDirectQueries {
+		return fmt.Errorf("ReactiveCommons not configured for [Events, Commands and/or Queries]")
+	}
+
+	return nil
 }

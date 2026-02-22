@@ -107,7 +107,7 @@ func TestNewCommandReceiver(t *testing.T) {
 	registry := NewRegistry()
 	mockClient := newMockRabbitClientCommandReceiver()
 
-	receiver := newCommandReceiver(mockClient, domain, registry)
+	receiver := newCommandReceiver(mockClient, &domain, &registry)
 
 	if receiver == nil {
 		t.Fatal("newCommandReceiver() returned nil")
@@ -121,7 +121,7 @@ func TestNewCommandReceiver(t *testing.T) {
 		t.Errorf("Expected DirectExchange '%s', got '%s'", domain.DirectExchange, receiver.domain.DirectExchange)
 	}
 
-	if receiver.registry != registry {
+	if receiver.registry != &registry {
 		t.Error("Expected registry to be set correctly")
 	}
 
@@ -154,7 +154,7 @@ func TestRabbitCommandReceiver_ProcessCommandMessage_Success(t *testing.T) {
 
 	registry.HandleCommand("user.create", handler)
 
-	receiver := newCommandReceiver(newMockRabbitClientCommandReceiver(), domain, registry)
+	receiver := newCommandReceiver(newMockRabbitClientCommandReceiver(), &domain, &registry)
 
 	command := Command[any]{
 		Name:      "user.create",
@@ -209,7 +209,7 @@ func TestRabbitCommandReceiver_ProcessCommandMessage_HandlerError(t *testing.T) 
 
 	registry.HandleCommand("user.create", handler)
 
-	receiver := newCommandReceiver(newMockRabbitClientCommandReceiver(), domain, registry)
+	receiver := newCommandReceiver(newMockRabbitClientCommandReceiver(), &domain, &registry)
 
 	command := Command[any]{
 		Name:      "user.create",
@@ -252,7 +252,7 @@ func TestRabbitCommandReceiver_ProcessCommandMessage_InvalidJson(t *testing.T) {
 
 	registry.HandleCommand("user.create", handler)
 
-	receiver := newCommandReceiver(newMockRabbitClientCommandReceiver(), domain, registry)
+	receiver := newCommandReceiver(newMockRabbitClientCommandReceiver(), &domain, &registry)
 
 	invalidJson := []byte("invalid json data")
 	mockMsg, mockAck := newMockDeliveryCommand(invalidJson)
@@ -282,7 +282,7 @@ func TestRabbitCommandReceiver_ProcessCommandMessage_NoHandler(t *testing.T) {
 	registry := NewRegistry()
 	// Don't register any handler
 
-	receiver := newCommandReceiver(newMockRabbitClientCommandReceiver(), domain, registry)
+	receiver := newCommandReceiver(newMockRabbitClientCommandReceiver(), &domain, &registry)
 
 	command := Command[any]{
 		Name:      "user.create",
@@ -362,7 +362,7 @@ func TestRabbitCommandReceiver_ProcessCommandMessage_DifferentDataTypes(t *testi
 
 			registry.HandleCommand("test.command", handler)
 
-			receiver := newCommandReceiver(newMockRabbitClientCommandReceiver(), domain, registry)
+			receiver := newCommandReceiver(newMockRabbitClientCommandReceiver(), &domain, &registry)
 
 			command := Command[any]{
 				Name:      "test.command",
@@ -406,7 +406,7 @@ func TestRabbitCommandReceiver_ProcessCommandMessage_MultipleCommands(t *testing
 	registry.HandleCommand("cmd2", handler)
 	registry.HandleCommand("cmd3", handler)
 
-	receiver := newCommandReceiver(newMockRabbitClientCommandReceiver(), domain, registry)
+	receiver := newCommandReceiver(newMockRabbitClientCommandReceiver(), &domain, &registry)
 
 	commands := []Command[any]{
 		{Name: "cmd1", CommandId: "id1", Data: "data1"},
@@ -446,7 +446,7 @@ func TestRabbitCommandReceiver_RegistryIntegration(t *testing.T) {
 	registry := NewRegistry()
 
 	// Initially no handler
-	if registry.CommandHandlers["user.create"] != nil {
+	if handler, exists := registry.GetCommandHandler("user.create"); exists && handler != nil {
 		t.Error("Expected no handler to exist initially")
 	}
 
@@ -457,11 +457,11 @@ func TestRabbitCommandReceiver_RegistryIntegration(t *testing.T) {
 	// Register handler
 	registry.HandleCommand("user.create", handler)
 
-	if registry.CommandHandlers["user.create"] == nil {
+	if handler, exists := registry.GetCommandHandler("user.create"); !exists || handler == nil {
 		t.Error("Expected handler to exist after registration")
 	}
 
-	receiver := newCommandReceiver(newMockRabbitClientCommandReceiver(), domain, registry)
+	receiver := newCommandReceiver(newMockRabbitClientCommandReceiver(), &domain, &registry)
 
 	command := Command[any]{
 		Name:      "user.create",
@@ -500,7 +500,7 @@ func TestRabbitCommandReceiver_EmptyCommandData(t *testing.T) {
 
 	registry.HandleCommand("test.command", handler)
 
-	receiver := newCommandReceiver(newMockRabbitClientCommandReceiver(), domain, registry)
+	receiver := newCommandReceiver(newMockRabbitClientCommandReceiver(), &domain, &registry)
 
 	command := Command[any]{
 		Name:      "test.command",
@@ -540,7 +540,7 @@ func TestRabbitCommandReceiver_CommandIdPreservation(t *testing.T) {
 
 	registry.HandleCommand("test.command", handler)
 
-	receiver := newCommandReceiver(newMockRabbitClientCommandReceiver(), domain, registry)
+	receiver := newCommandReceiver(newMockRabbitClientCommandReceiver(), &domain, &registry)
 
 	expectedCommandId := "unique-cmd-id-12345"
 	command := Command[any]{
@@ -577,7 +577,7 @@ func TestRabbitCommandReceiver_ComplexCommandData(t *testing.T) {
 
 	registry.HandleCommand("order.create", handler)
 
-	receiver := newCommandReceiver(newMockRabbitClientCommandReceiver(), domain, registry)
+	receiver := newCommandReceiver(newMockRabbitClientCommandReceiver(), &domain, &registry)
 
 	complexData := map[string]interface{}{
 		"orderId": "order-123",
@@ -637,7 +637,7 @@ func TestRabbitCommandReceiver_BindingCalledOnStartListening(t *testing.T) {
 		return nil, errors.New("mock error to prevent full execution")
 	}
 
-	receiver := newCommandReceiver(mockClient, domain, registry)
+	receiver := newCommandReceiver(mockClient, &domain, &registry)
 
 	// This will panic due to the mock error, but we're just checking the initial call
 	defer func() {
@@ -729,7 +729,7 @@ func TestRabbitCommandReceiver_QueueNameInitialization(t *testing.T) {
 			}
 
 			registry := NewRegistry()
-			receiver := newCommandReceiver(nil, domain, registry)
+			receiver := newCommandReceiver(nil, &domain, &registry)
 
 			if receiver.queueName != tt.expectedQueueName {
 				t.Errorf("Expected queue name '%s', got '%s'", tt.expectedQueueName, receiver.queueName)
@@ -772,7 +772,7 @@ func TestRabbitCommandReceiver_DomainConfiguration(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			registry := NewRegistry()
-			receiver := newCommandReceiver(nil, tt.domain, registry)
+			receiver := newCommandReceiver(nil, &tt.domain, &registry)
 
 			if receiver == nil {
 				t.Fatal("newCommandReceiver() returned nil")
@@ -864,7 +864,7 @@ func TestRabbitCommandReceiver_MultipleHandlers(t *testing.T) {
 	registry.HandleCommand("cmd2", handler2)
 	registry.HandleCommand("cmd3", handler3)
 
-	receiver := newCommandReceiver(newMockRabbitClientCommandReceiver(), domain, registry)
+	receiver := newCommandReceiver(newMockRabbitClientCommandReceiver(), &domain, &registry)
 
 	commands := []string{"cmd1", "cmd2", "cmd1", "cmd3", "cmd2"}
 
@@ -916,7 +916,7 @@ func TestRabbitCommandReceiver_CommandNameMatching(t *testing.T) {
 
 	registry.HandleCommand("user.create", handler)
 
-	receiver := newCommandReceiver(newMockRabbitClientCommandReceiver(), domain, registry)
+	receiver := newCommandReceiver(newMockRabbitClientCommandReceiver(), &domain, &registry)
 
 	cmdName := "user.create"
 	command := Command[any]{

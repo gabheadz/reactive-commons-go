@@ -74,7 +74,7 @@ func TestNewQueryServer(t *testing.T) {
 	// Create a mock client
 	mockClient := &mockRabbitClientServer{}
 
-	server := newQueryServer(mockClient, domain, registry)
+	server := newQueryServer(mockClient, &domain, &registry)
 
 	if server == nil {
 		t.Fatal("newQueryServer() returned nil")
@@ -84,7 +84,7 @@ func TestNewQueryServer(t *testing.T) {
 		t.Errorf("Expected domain name '%s', got '%s'", domain.Name, server.domain.Name)
 	}
 
-	if server.registry != registry {
+	if server.registry != &registry {
 		t.Error("Registry not set correctly")
 	}
 
@@ -112,9 +112,9 @@ func TestRabbitQueryServer_ServeQueries(t *testing.T) {
 			return "result2", nil
 		},
 	}
-	registry.QueryHandlers = handlers
+	registry.ServeQueries(handlers)
 
-	server := newQueryServer(mockClient, domain, registry)
+	server := newQueryServer(mockClient, &domain, &registry)
 
 	// This will fail due to nil client, but tests the structure
 	// In a real scenario, this would set up consumers
@@ -140,7 +140,7 @@ func TestRabbitQueryServer_ServeQuery_NilClient(t *testing.T) {
 	}
 	registry.ServeQuery("test-resource", handler)
 
-	server := newQueryServer(mockClient, domain, registry)
+	server := newQueryServer(mockClient, &domain, &registry)
 
 	err := server.serveQueries()
 
@@ -170,7 +170,7 @@ func TestRabbitQueryServer_ProcessQueryMessage_ValidQuery(t *testing.T) {
 
 	// Create a mock client
 	mockClient := &mockRabbitClientServer{}
-	server := newQueryServer(mockClient, domain, registry)
+	server := newQueryServer(mockClient, &domain, &registry)
 
 	// Create a mock query message
 	query := AsyncQuery[any]{
@@ -210,7 +210,7 @@ func TestRabbitQueryServer_ProcessQueryMessage_InvalidJSON(t *testing.T) {
 
 	// Create a mock client
 	mockClient := &mockRabbitClientServer{}
-	server := newQueryServer(mockClient, domain, registry)
+	server := newQueryServer(mockClient, &domain, &registry)
 
 	// Create mock delivery with invalid JSON
 	msg := amqp091.Delivery{
@@ -235,7 +235,7 @@ func TestRabbitQueryServer_ProcessQueryMessage_NoHandler(t *testing.T) {
 	registry := NewRegistry()
 	// Create a mock client
 	mockClient := &mockRabbitClientServer{}
-	server := newQueryServer(mockClient, domain, registry)
+	server := newQueryServer(mockClient, &domain, &registry)
 
 	// Create a query for a resource with no handler
 	query := AsyncQuery[any]{
@@ -278,7 +278,7 @@ func TestRabbitQueryServer_ProcessQueryMessage_HandlerError(t *testing.T) {
 
 	// Create a mock client
 	mockClient := &mockRabbitClientServer{}
-	server := newQueryServer(mockClient, domain, registry)
+	server := newQueryServer(mockClient, &domain, &registry)
 
 	query := AsyncQuery[any]{
 		Resource:  "error-resource",
@@ -317,7 +317,7 @@ func TestRabbitQueryServer_SendReply_NilClient(t *testing.T) {
 		},
 	}
 
-	server := newQueryServer(mockClient, domain, registry)
+	server := newQueryServer(mockClient, &domain, &registry)
 
 	err := server.sendReply("reply-queue", "correlation-123", "test response")
 
@@ -367,7 +367,7 @@ func TestRabbitQueryServer_DomainConfiguration(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			registry := NewRegistry()
-			server := newQueryServer(nil, tt.domain, registry)
+			server := newQueryServer(nil, &tt.domain, &registry)
 
 			if server == nil {
 				t.Fatal("newQueryServer() returned nil")
@@ -417,14 +417,14 @@ func TestRabbitQueryServer_MultipleHandlers(t *testing.T) {
 		return "result3", nil
 	})
 
-	server := newQueryServer(nil, domain, registry)
+	server := newQueryServer(nil, &domain, &registry)
 
-	if len(registry.QueryHandlers) != 3 {
-		t.Errorf("Expected 3 handlers, got %d", len(registry.QueryHandlers))
+	if registry.QueryHandlersCount() != 3 {
+		t.Errorf("Expected 3 handlers, got %d", registry.QueryHandlersCount())
 	}
 
 	// Test each handler
-	for resource, handler := range registry.QueryHandlers {
+	for resource, handler := range registry.GetQueryHandlers() {
 		result, err := handler("test")
 		if err != nil {
 			t.Errorf("Handler for %s returned error: %v", resource, err)
@@ -438,7 +438,7 @@ func TestRabbitQueryServer_MultipleHandlers(t *testing.T) {
 		t.Error("Not all handlers were called")
 	}
 
-	if server.registry != registry {
+	if server.registry != &registry {
 		t.Error("Server registry not set correctly")
 	}
 }
@@ -492,7 +492,7 @@ func TestRabbitQueryServer_ResponseDataTypes(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			// Create a mock client
 			mockClient := &mockRabbitClientServer{}
-			server := newQueryServer(mockClient, domain, registry)
+			server := newQueryServer(mockClient, &domain, &registry)
 
 			// Test that response data can be marshaled
 			_, err := json.Marshal(tt.responseData)
@@ -558,20 +558,20 @@ func TestRabbitQueryServer_RegistryUpdate(t *testing.T) {
 	registry1 := NewRegistry()
 	registry2 := NewRegistry()
 
-	server := newQueryServer(nil, domain, registry1)
+	server := newQueryServer(nil, &domain, &registry1)
 
-	if server.registry != registry1 {
+	if server.registry != &registry1 {
 		t.Error("Initial registry not set correctly")
 	}
 
 	// Update registry
-	server.registry = registry2
+	server.registry = &registry2
 
-	if server.registry != registry2 {
+	if server.registry != &registry2 {
 		t.Error("Registry not updated correctly")
 	}
 
-	if server.registry == registry1 {
+	if server.registry == &registry1 {
 		t.Error("Registry should have changed")
 	}
 }
@@ -595,13 +595,13 @@ func TestRabbitQueryServer_ConcurrentHandlers(t *testing.T) {
 
 	// Create a mock client
 	mockClient := &mockRabbitClientServer{}
-	server := newQueryServer(mockClient, domain, registry)
+	server := newQueryServer(mockClient, &domain, &registry)
 
-	if len(registry.QueryHandlers) != 10 {
-		t.Errorf("Expected 10 handlers, got %d", len(registry.QueryHandlers))
+	if registry.QueryHandlersCount() != 10 {
+		t.Errorf("Expected 10 handlers, got %d", registry.QueryHandlersCount())
 	}
 
-	if server.registry != registry {
+	if server.registry != &registry {
 		t.Error("Registry not set correctly")
 	}
 }
@@ -616,13 +616,13 @@ func TestRabbitQueryServer_EmptyRegistry(t *testing.T) {
 	registry := NewRegistry()
 	// Create a mock client
 	mockClient := &mockRabbitClientServer{}
-	server := newQueryServer(mockClient, domain, registry)
+	server := newQueryServer(mockClient, &domain, &registry)
 
 	if server == nil {
 		t.Fatal("Server should not be nil with empty registry")
 	}
 
-	if len(registry.QueryHandlers) != 0 {
-		t.Errorf("Expected 0 handlers, got %d", len(registry.QueryHandlers))
+	if registry.QueryHandlersCount() != 0 {
+		t.Errorf("Expected 0 handlers, got %d", registry.QueryHandlersCount())
 	}
 }

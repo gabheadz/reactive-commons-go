@@ -5,12 +5,13 @@ import (
 )
 
 type RabbitMQConfig struct {
-	Host        string
-	Port        int
-	User        string
-	Password    string
-	Secure      bool
-	VirtualHost string
+	Host                string
+	Port                int
+	User                string
+	Password            string
+	Secure              bool
+	VirtualHost         string
+	SeparateConnections bool // for sending and receiving
 }
 
 type DomainDefinition struct {
@@ -83,6 +84,7 @@ type CommandHandler func(command any) error
 type RequestReplyOptions struct {
 	TargetName string
 	Domain     string
+	MaxWait    int // in seconds
 }
 
 type AsyncQuery[T any] struct {

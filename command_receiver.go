@@ -10,14 +10,14 @@ import (
 
 type rabbitCommandReceiver struct {
 	client    RabbitClientInterface
-	domain    DomainDefinition
+	domain    *DomainDefinition
 	registry  *Registry
 	queueName string
 }
 
 // newCommandReceiver creates a new rabbitCommandReceiver instance with the provided client, domain configuration, and handler registry.
 // It returns a pointer to the initialized rabbitCommandReceiver that can be used to handle incoming commands.
-func newCommandReceiver(client RabbitClientInterface, domain DomainDefinition, registry *Registry) *rabbitCommandReceiver {
+func newCommandReceiver(client RabbitClientInterface, domain *DomainDefinition, registry *Registry) *rabbitCommandReceiver {
 	return &rabbitCommandReceiver{
 		client:    client,
 		domain:    domain,
@@ -65,7 +65,7 @@ func (r *rabbitCommandReceiver) processCommandMessage(msg amqp091.Delivery) {
 		return
 	}
 
-	h, exists := r.registry.CommandHandlers[command.Name]
+	h, exists := r.registry.GetCommandHandler(command.Name)
 	if exists {
 		err = h(command)
 		if err != nil {

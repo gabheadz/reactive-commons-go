@@ -9,10 +9,14 @@ import (
 
 type rabbitCommandSender struct {
 	client RabbitClientInterface
-	domain DomainDefinition
+	domain *DomainDefinition
 }
 
-func newCommandSender(client RabbitClientInterface, domain DomainDefinition) *rabbitCommandSender {
+func newCommandSender(client RabbitClientInterface, domain *DomainDefinition) *rabbitCommandSender {
+	_, err := client.CreateChannel(ChannelForCommands)
+	if err != nil {
+		log.Panicf("Failed to create channel: %v", err)
+	}
 	return &rabbitCommandSender{
 		client: client,
 		domain: domain,

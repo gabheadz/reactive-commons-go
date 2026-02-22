@@ -4,13 +4,12 @@ import (
 	"encoding/json"
 	"log"
 
-	"github.com/bancolombia/reactive-commons-go/internal/rabbit"
 	"github.com/rabbitmq/amqp091-go"
 )
 
 type rabbitEventListener struct {
 	client    RabbitClientInterface
-	domain    DomainDefinition
+	domain    *DomainDefinition
 	registry  *Registry
 	queueName string
 }
@@ -18,28 +17,12 @@ type rabbitEventListener struct {
 // newEventListener creates a new rabbitEventListener instance with the provided RabbitMQ client,
 // domain definition, and event handler registry. The returned listener can be used to
 // subscribe to and process domain events from RabbitMQ queues.
-func newEventListener(client RabbitClientInterface, domain DomainDefinition, registry *Registry) *rabbitEventListener {
+func newEventListener(client RabbitClientInterface, domain *DomainDefinition, registry *Registry) *rabbitEventListener {
 	return &rabbitEventListener{
 		client:    client,
 		domain:    domain,
 		registry:  registry,
 		queueName: calculateQueueName(domain.Name, domain.DomainEventsSuffix, false),
-	}
-}
-
-func (l *rabbitEventListener) setupBindings() {
-	rmqChannel, err := l.client.GetChannel(ChannelForEvents)
-	if err != nil {
-		log.Panicf("Failed to get channel: %v", err)
-	}
-
-	for eventName := range l.registry.EventHandlers {
-		// Wrap channel for topology operations
-		wrappedChannel := &rabbit.RabbitChannel{Channel: rmqChannel}
-		err = rabbit.Bind(wrappedChannel, l.queueName, eventName, l.domain.DomainEventsExchange, true)
-		if err != nil {
-			log.Panicf("Failed to bind queue: %v", err)
-		}
 	}
 }
 
@@ -52,7 +35,7 @@ func (l *rabbitEventListener) startListeningEvents() {
 
 	msgs, err := rmqChannel.Consume(
 		l.queueName,
-		"",
+		l.domain.Name+"_event_listener_"+ChannelForEvents,
 		false,
 		false,
 		false,
@@ -80,7 +63,7 @@ func (l *rabbitEventListener) processEventMessage(msg amqp091.Delivery) {
 		return
 	}
 
-	evtHandler, exists := l.registry.EventHandlers[event.Name]
+	evtHandler, exists := l.registry.GetEventHandler(event.Name)
 	if exists {
 		errEvt := evtHandler(event)
 		if errEvt != nil {

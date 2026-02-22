@@ -11,12 +11,12 @@ import (
 
 type rabbitQueryServer struct {
 	client    RabbitClientInterface
-	domain    DomainDefinition
+	domain    *DomainDefinition
 	registry  *Registry
 	queueName string
 }
 
-func newQueryServer(client RabbitClientInterface, domain DomainDefinition, registry *Registry) *rabbitQueryServer {
+func newQueryServer(client RabbitClientInterface, domain *DomainDefinition, registry *Registry) *rabbitQueryServer {
 	return &rabbitQueryServer{
 		client:    client,
 		domain:    domain,
@@ -64,7 +64,7 @@ func (s *rabbitQueryServer) processQueryMessage(msg amqp091.Delivery) {
 		return
 	}
 
-	h, exists := s.registry.QueryHandlers[query.Resource]
+	h, exists := s.registry.GetQueryHandler(query.Resource)
 	if !exists {
 		log.Printf("No handler found for query: %s", query.Resource)
 		msg.Nack(false, true)

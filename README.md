@@ -183,6 +183,7 @@ query := rcommons.AsyncQuery[any]{
 opts := rcommons.RequestReplyOptions{
     TargetName: "user-service",
     Domain:     "my-service",
+    MaxWait:    3,
 }
 
 response, err := rc.SendQueryRequest(query, opts)
@@ -231,6 +232,9 @@ Configuration for your service domain.
 type DomainDefinition struct {
     Name                     string          // Service name (required)
     ConnectionConfig         RabbitMQConfig  // RabbitMQ connection config (required)
+    UseDomainEvents          bool            // Enable Events topology/listeners/publisher (optional)
+    UseDirectCommands        bool            // Enable Commands topology/listeners/sender (optional)
+    UseDirectQueries         bool            // Enable Queries topology/server/client (optional)
     DomainEventsExchange     string          // Custom exchange name (optional, defaults to "domainEvents")
     DomainEventsSuffix       string          // Custom queue suffix (optional, defaults to "subsEvents")
     DirectExchange           string          // Custom direct exchange (optional, defaults to "directMessages")
@@ -239,6 +243,48 @@ type DomainDefinition struct {
     GlobalExchange           string          // Custom global exchange (optional, defaults to "globalReply")
     GlobalRepliesSuffix      string          // Custom replies queue suffix (optional, defaults to "replies")
 }
+```
+
+### Feature Switches: `UseDomainEvents`, `UseDirectCommands`, `UseDirectQueries`
+
+These three flags control which messaging capabilities are initialized during `rc.Start(registry)`.
+
+- If a flag is explicitly set to `true`, that capability is enabled.
+- If a flag is `false`, Reactive Commons auto-enables it when matching handlers exist in the `Registry`:
+    - `UseDomainEvents` => enabled when at least one event handler is registered.
+    - `UseDirectCommands` => enabled when at least one command handler **or** query handler is registered.
+    - `UseDirectQueries` => enabled when at least one query handler is registered.
+- If all three remain disabled after this evaluation, `Start()` fails with configuration error.
+
+Example (explicit enable):
+
+```go
+config := rcommons.DomainDefinition{
+        Name:              "my-service",
+        UseDomainEvents:   true,
+        UseDirectCommands: true,
+        UseDirectQueries:  false,
+        ConnectionConfig:  rcommons.RabbitMQConfig{ /* ... */ },
+}
+```
+
+Example (auto-enable from registered handlers):
+
+```go
+config := rcommons.DomainDefinition{
+        Name:             "my-service",
+        ConnectionConfig: rcommons.RabbitMQConfig{ /* ... */ },
+}
+
+registry := rcommons.NewRegistry()
+registry.ListenEvent("user.created", handler)
+registry.ServeQuery("user.get", queryHandler)
+
+// Start() auto-enables:
+// - UseDomainEvents (event handler exists)
+// - UseDirectQueries (query handler exists)
+// - UseDirectCommands (query implies direct command/direct exchange path)
+rc.Start(registry)
 ```
 
 #### RabbitMQConfig
@@ -253,6 +299,7 @@ type RabbitMQConfig struct {
     Password    string  // Password
     Secure      bool    // Use TLS (amqps)
     VirtualHost string  // Virtual host
+    SeparateConnections bool // Use separate connections for sending and receiving
 }
 ```
 
@@ -291,6 +338,18 @@ type AsyncQuery[T any] struct {
 }
 ```
 
+#### RequestReplyOptions
+
+Options for sending queries and waiting for responses.
+
+```go
+type RequestReplyOptions struct {
+    TargetName string // Target service
+    Domain     string // Source domain
+    MaxWait    int    // Timeout in seconds (default: 3)
+}
+```
+
 ### ReactiveCommons Methods
 
 The `ReactiveCommons` struct provides these core methods for sending events, commands, and queries:
@@ -300,7 +359,7 @@ The `ReactiveCommons` struct provides these core methods for sending events, com
 NewReactiveCommons(domainCfg DomainDefinition) *ReactiveCommons
 
 // Start listening for messages based on registered handlers
-Start(registry *Registry)
+Start(registry Registry)
 
 // Send a domain event
 EmitEvent(event DomainEvent[any], opts EventOptions) error
@@ -318,20 +377,39 @@ The `Registry` is used to register message handlers. Handlers must be registered
 
 ```go
 // Create a new empty registry
-NewRegistry() *Registry
+NewRegistry() Registry
 
 // Event handler registration
 ListenEvent(eventName string, handler EventHandler)
 ListenEvents(handlers map[string]EventHandler)
-ListenEventTyped[T any](registry *Registry, eventName string, handler func(event T) error)
+ListenEventTyped[T any](registry Registry, eventName string, handler func(event T) error)
 
 // Command handler registration
 HandleCommand(commandName string, handler CommandHandler)
 HandleCommands(handlers map[string]CommandHandler)
 
 // Query handler registration
-ServeQuery(resource string, handler QueryHandler) error
+ServeQuery(resource string, handler QueryHandler)
 ServeQueries(handlers map[string]QueryHandler)
+
+// Handler existence checks
+HasEventHandler(eventName string) bool
+HasCommandHandler(commandName string) bool
+HasQueryHandler(resource string) bool
+
+// Single handler getters
+GetEventHandler(eventName string) (EventHandler, bool)
+GetCommandHandler(commandName string) (CommandHandler, bool)
+GetQueryHandler(resource string) (QueryHandler, bool)
+
+// Handler map snapshots and counters
+GetEventHandlers() map[string]EventHandler
+GetCommandHandlers() map[string]CommandHandler
+GetQueryHandlers() map[string]QueryHandler
+EventHandlersCount() int
+CommandHandlersCount() int
+QueryHandlersCount() int
+Clear()
 ```
 
 ### Handler Function Signatures
@@ -475,6 +553,7 @@ func main() {
     response, err := rc.SendQueryRequest(query, rcommons.RequestReplyOptions{
         TargetName: "user-service",
         Domain:     "order-service",
+        MaxWait:    3,
     })
     if err != nil {
         log.Printf("Failed to send query: %v", err)

@@ -7,20 +7,18 @@ import (
 )
 
 type rabbitTopologyManager struct {
-	client *rabbit.RabbitClient
 	domain *DomainDefinition
 }
 
-func newTopologyManager(client *rabbit.RabbitClient, domain *DomainDefinition) *rabbitTopologyManager {
+func newTopologyManager(domain *DomainDefinition) *rabbitTopologyManager {
 	return &rabbitTopologyManager{
-		client: client,
 		domain: domain,
 	}
 }
 
-func (m *rabbitTopologyManager) setupDomainEvents() error {
+func (m *rabbitTopologyManager) setupDomainEvents(client *rabbit.RabbitClient, eventHandlers map[string]EventHandler) error {
 
-	ch, err := m.client.CreateChannel(ChannelForEvents)
+	ch, err := client.CreateChannel(ChannelForEvents)
 	if err != nil {
 		log.Panicf("Failed to create channel: %v", err)
 	}
@@ -41,12 +39,21 @@ func (m *rabbitTopologyManager) setupDomainEvents() error {
 		return err
 	}
 
+	// Make sure to bind the queue to all event types for which handlers are registered
+	for eventName := range eventHandlers {
+		err = rabbit.Bind(wrappedChannel, queueName, eventName, m.domain.DomainEventsExchange, true)
+		if err != nil {
+			log.Panicf("Failed to bind queue: %v", err)
+		}
+		log.Printf("Successfully bound queue %s to exchange %s with routing key %s", queueName, m.domain.DomainEventsExchange, eventName)
+	}
+
 	return nil
 }
 
-func (m *rabbitTopologyManager) setupDirectCommands() error {
+func (m *rabbitTopologyManager) setupDirectCommands(client *rabbit.RabbitClient) error {
 
-	ch, err := m.client.CreateChannel(ChannelForCommands)
+	ch, err := client.CreateChannel(ChannelForCommands)
 	if err != nil {
 		log.Panicf("Failed to create channel: %v", err)
 	}
@@ -68,7 +75,7 @@ func (m *rabbitTopologyManager) setupDirectCommands() error {
 	}
 
 	if m.domain.UseDirectQueries {
-		ch2, err2 := m.client.CreateChannel(ChannelForQueries)
+		ch2, err2 := client.CreateChannel(ChannelForQueries)
 		if err2 != nil {
 			log.Panicf("Failed to create channel: %v", err)
 		}
@@ -93,9 +100,9 @@ func (m *rabbitTopologyManager) setupDirectCommands() error {
 	return nil
 }
 
-func (m *rabbitTopologyManager) setupAsyncQueries() error {
+func (m *rabbitTopologyManager) setupAsyncQueries(client *rabbit.RabbitClient) error {
 
-	ch, err := m.client.CreateChannel(ChannelForReplies)
+	ch, err := client.CreateChannel(ChannelForReplies)
 	if err != nil {
 		log.Panicf("Failed to create channel: %v", err)
 	}

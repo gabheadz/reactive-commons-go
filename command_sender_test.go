@@ -77,7 +77,7 @@ func TestNewCommandSender(t *testing.T) {
 
 	mockClient := newMockRabbitClientCommandSender()
 
-	sender := newCommandSender(mockClient, domain)
+	sender := newCommandSender(mockClient, &domain)
 
 	if sender == nil {
 		t.Fatal("newCommandSender() returned nil")
@@ -114,7 +114,7 @@ func TestRabbitCommandSender_SendCommand_Success(t *testing.T) {
 		return nil
 	}
 
-	sender := newCommandSender(mockClient, domain)
+	sender := newCommandSender(mockClient, &domain)
 
 	command := Command[any]{
 		Name:      "user.create",
@@ -172,7 +172,7 @@ func TestRabbitCommandSender_SendCommand_MissingCommandName(t *testing.T) {
 		DirectExchange: "commands",
 	}
 
-	sender := newCommandSender(newMockRabbitClientCommandSender(), domain)
+	sender := newCommandSender(newMockRabbitClientCommandSender(), &domain)
 
 	command := Command[any]{
 		Name:      "",
@@ -203,7 +203,7 @@ func TestRabbitCommandSender_SendCommand_MissingDomain(t *testing.T) {
 		DirectExchange: "commands",
 	}
 
-	sender := newCommandSender(newMockRabbitClientCommandSender(), domain)
+	sender := newCommandSender(newMockRabbitClientCommandSender(), &domain)
 
 	command := Command[any]{
 		Name:      "user.create",
@@ -234,7 +234,7 @@ func TestRabbitCommandSender_SendCommand_MissingTargetName(t *testing.T) {
 		DirectExchange: "commands",
 	}
 
-	sender := newCommandSender(newMockRabbitClientCommandSender(), domain)
+	sender := newCommandSender(newMockRabbitClientCommandSender(), &domain)
 
 	command := Command[any]{
 		Name:      "user.create",
@@ -272,7 +272,7 @@ func TestRabbitCommandSender_SendCommand_PublishError(t *testing.T) {
 		return expectedError
 	}
 
-	sender := newCommandSender(mockClient, domain)
+	sender := newCommandSender(mockClient, &domain)
 
 	command := Command[any]{
 		Name:      "user.create",
@@ -307,7 +307,7 @@ func TestRabbitCommandSender_SendCommand_DifferentDataTypes(t *testing.T) {
 		return nil
 	}
 
-	sender := newCommandSender(mockClient, domain)
+	sender := newCommandSender(mockClient, &domain)
 
 	tests := []struct {
 		name        string
@@ -380,7 +380,7 @@ func TestRabbitCommandSender_SendCommand_HeadersValidation(t *testing.T) {
 		return nil
 	}
 
-	sender := newCommandSender(mockClient, domain)
+	sender := newCommandSender(mockClient, &domain)
 
 	command := Command[any]{
 		Name:      "order.create",
@@ -437,7 +437,7 @@ func TestRabbitCommandSender_SendCommand_MultipleCommands(t *testing.T) {
 		return nil
 	}
 
-	sender := newCommandSender(mockClient, domain)
+	sender := newCommandSender(mockClient, &domain)
 
 	commands := []Command[any]{
 		{Name: "cmd1", CommandId: "id1", Data: "data1"},
@@ -473,7 +473,7 @@ func TestRabbitCommandSender_SendCommand_CommandIdPreservation(t *testing.T) {
 		return nil
 	}
 
-	sender := newCommandSender(mockClient, domain)
+	sender := newCommandSender(mockClient, &domain)
 
 	expectedCommandId := "unique-cmd-id-12345"
 	command := Command[any]{
@@ -509,7 +509,7 @@ func TestRabbitCommandSender_SendCommand_ComplexCommandData(t *testing.T) {
 		return nil
 	}
 
-	sender := newCommandSender(mockClient, domain)
+	sender := newCommandSender(mockClient, &domain)
 
 	complexData := map[string]interface{}{
 		"orderId": "order-123",
@@ -577,7 +577,7 @@ func TestRabbitCommandSender_DomainConfiguration(t *testing.T) {
 				return nil
 			}
 
-			sender := newCommandSender(mockClient, tt.domain)
+			sender := newCommandSender(mockClient, &tt.domain)
 
 			command := Command[any]{
 				Name:      "test.command",
@@ -613,7 +613,7 @@ func TestRabbitCommandSender_TargetNameRouting(t *testing.T) {
 		return nil
 	}
 
-	sender := newCommandSender(mockClient, domain)
+	sender := newCommandSender(mockClient, &domain)
 
 	tests := []string{
 		"user-service",
@@ -652,7 +652,7 @@ func TestRabbitCommandSender_AllValidationsRequired(t *testing.T) {
 		DirectExchange: "commands",
 	}
 
-	sender := newCommandSender(newMockRabbitClientCommandSender(), domain)
+	sender := newCommandSender(newMockRabbitClientCommandSender(), &domain)
 
 	command := Command[any]{
 		Name:      "user.create",
@@ -731,7 +731,7 @@ func TestRabbitCommandSender_SendCommand_DomainNameInHeaders(t *testing.T) {
 		return nil
 	}
 
-	sender := newCommandSender(mockClient, domain)
+	sender := newCommandSender(mockClient, &domain)
 
 	command := Command[any]{
 		Name:      "test.command",
@@ -773,7 +773,7 @@ func TestRabbitCommandSender_TimestampHeader(t *testing.T) {
 		return nil
 	}
 
-	sender := newCommandSender(mockClient, domain)
+	sender := newCommandSender(mockClient, &domain)
 
 	command := Command[any]{
 		Name:      "test.command",

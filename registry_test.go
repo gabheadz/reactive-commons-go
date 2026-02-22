@@ -8,32 +8,28 @@ import (
 func TestNewRegistry(t *testing.T) {
 	registry := NewRegistry()
 
-	if registry == nil {
-		t.Fatal("NewRegistry() returned nil")
-	}
-
-	if registry.EventHandlers == nil {
+	if registry.GetEventHandlers() == nil {
 		t.Error("EventHandlers map not initialized")
 	}
 
-	if registry.CommandHandlers == nil {
+	if registry.GetCommandHandlers() == nil {
 		t.Error("CommandHandlers map not initialized")
 	}
 
-	if registry.QueryHandlers == nil {
+	if registry.GetQueryHandlers() == nil {
 		t.Error("QueryHandlers map not initialized")
 	}
 
-	if len(registry.EventHandlers) != 0 {
-		t.Errorf("Expected empty EventHandlers, got %d entries", len(registry.EventHandlers))
+	if registry.EventHandlersCount() != 0 {
+		t.Errorf("Expected empty EventHandlers, got %d entries", registry.EventHandlersCount())
 	}
 
-	if len(registry.CommandHandlers) != 0 {
-		t.Errorf("Expected empty CommandHandlers, got %d entries", len(registry.CommandHandlers))
+	if registry.CommandHandlersCount() != 0 {
+		t.Errorf("Expected empty CommandHandlers, got %d entries", registry.CommandHandlersCount())
 	}
 
-	if len(registry.QueryHandlers) != 0 {
-		t.Errorf("Expected empty QueryHandlers, got %d entries", len(registry.QueryHandlers))
+	if registry.QueryHandlersCount() != 0 {
+		t.Errorf("Expected empty QueryHandlers, got %d entries", registry.QueryHandlersCount())
 	}
 }
 
@@ -48,16 +44,17 @@ func TestListenEvent(t *testing.T) {
 
 	registry.ListenEvent("test.event", handler)
 
-	if len(registry.EventHandlers) != 1 {
-		t.Errorf("Expected 1 event handler, got %d", len(registry.EventHandlers))
+	if registry.EventHandlersCount() != 1 {
+		t.Errorf("Expected 1 event handler, got %d", registry.EventHandlersCount())
 	}
 
-	if _, exists := registry.EventHandlers["test.event"]; !exists {
+	if _, exists := registry.GetEventHandler("test.event"); !exists {
 		t.Error("Event handler not registered with correct name")
 	}
 
 	// Test handler execution
-	err := registry.EventHandlers["test.event"]("test data")
+	eventHandlerFn, _ := registry.GetEventHandler("test.event")
+	err := eventHandlerFn("test data")
 	if err != nil {
 		t.Errorf("Handler returned error: %v", err)
 	}
@@ -78,12 +75,13 @@ func TestListenEventTyped(t *testing.T) {
 
 	ListenEventTyped(registry, "typed.event", handler)
 
-	if len(registry.EventHandlers) != 1 {
-		t.Errorf("Expected 1 event handler, got %d", len(registry.EventHandlers))
+	if registry.EventHandlersCount() != 1 {
+		t.Errorf("Expected 1 event handler, got %d", registry.EventHandlersCount())
 	}
 
 	// Test with correct type
-	err := registry.EventHandlers["typed.event"]("hello")
+	typedHandlerFn, _ := registry.GetEventHandler("typed.event")
+	err := typedHandlerFn("hello")
 	if err != nil {
 		t.Errorf("Handler returned error: %v", err)
 	}
@@ -93,7 +91,7 @@ func TestListenEventTyped(t *testing.T) {
 	}
 
 	// Test with incorrect type
-	err = registry.EventHandlers["typed.event"](123)
+	err = typedHandlerFn(123)
 	if err == nil {
 		t.Error("Expected error for type mismatch, got nil")
 	}
@@ -110,12 +108,12 @@ func TestListenEvents(t *testing.T) {
 
 	registry.ListenEvents(handlers)
 
-	if len(registry.EventHandlers) != 3 {
-		t.Errorf("Expected 3 event handlers, got %d", len(registry.EventHandlers))
+	if registry.EventHandlersCount() != 3 {
+		t.Errorf("Expected 3 event handlers, got %d", registry.EventHandlersCount())
 	}
 
 	for name := range handlers {
-		if _, exists := registry.EventHandlers[name]; !exists {
+		if _, exists := registry.GetEventHandler(name); !exists {
 			t.Errorf("Event handler '%s' not registered", name)
 		}
 	}
@@ -132,16 +130,17 @@ func TestHandleCommand(t *testing.T) {
 
 	registry.HandleCommand("test.command", handler)
 
-	if len(registry.CommandHandlers) != 1 {
-		t.Errorf("Expected 1 command handler, got %d", len(registry.CommandHandlers))
+	if registry.CommandHandlersCount() != 1 {
+		t.Errorf("Expected 1 command handler, got %d", registry.CommandHandlersCount())
 	}
 
-	if _, exists := registry.CommandHandlers["test.command"]; !exists {
+	if _, exists := registry.GetCommandHandler("test.command"); !exists {
 		t.Error("Command handler not registered with correct name")
 	}
 
 	// Test handler execution
-	err := registry.CommandHandlers["test.command"]("test command")
+	handlerFn, _ := registry.GetCommandHandler("test.command")
+	err := handlerFn("test command")
 	if err != nil {
 		t.Errorf("Handler returned error: %v", err)
 	}
@@ -161,12 +160,12 @@ func TestHandleCommands(t *testing.T) {
 
 	registry.HandleCommands(handlers)
 
-	if len(registry.CommandHandlers) != 2 {
-		t.Errorf("Expected 2 command handlers, got %d", len(registry.CommandHandlers))
+	if registry.CommandHandlersCount() != 2 {
+		t.Errorf("Expected 2 command handlers, got %d", registry.CommandHandlersCount())
 	}
 
 	for name := range handlers {
-		if _, exists := registry.CommandHandlers[name]; !exists {
+		if _, exists := registry.GetCommandHandler(name); !exists {
 			t.Errorf("Command handler '%s' not registered", name)
 		}
 	}
@@ -183,16 +182,17 @@ func TestServeQuery(t *testing.T) {
 
 	registry.ServeQuery("test.query", handler)
 
-	if len(registry.QueryHandlers) != 1 {
-		t.Errorf("Expected 1 query handler, got %d", len(registry.QueryHandlers))
+	if registry.QueryHandlersCount() != 1 {
+		t.Errorf("Expected 1 query handler, got %d", registry.QueryHandlersCount())
 	}
 
-	if _, exists := registry.QueryHandlers["test.query"]; !exists {
+	if _, exists := registry.GetQueryHandler("test.query"); !exists {
 		t.Error("Query handler not registered with correct name")
 	}
 
 	// Test handler execution
-	result, err := registry.QueryHandlers["test.query"]("test query")
+	queryFn, _ := registry.GetQueryHandler("test.query")
+	result, err := queryFn("test query")
 	if err != nil {
 		t.Errorf("Handler returned error: %v", err)
 	}
@@ -216,12 +216,12 @@ func TestServeQueries(t *testing.T) {
 
 	registry.ServeQueries(handlers)
 
-	if len(registry.QueryHandlers) != 2 {
-		t.Errorf("Expected 2 query handlers, got %d", len(registry.QueryHandlers))
+	if registry.QueryHandlersCount() != 2 {
+		t.Errorf("Expected 2 query handlers, got %d", registry.QueryHandlersCount())
 	}
 
 	for name := range handlers {
-		if _, exists := registry.QueryHandlers[name]; !exists {
+		if _, exists := registry.GetQueryHandler(name); !exists {
 			t.Errorf("Query handler '%s' not registered", name)
 		}
 	}
@@ -246,11 +246,12 @@ func TestHandlerOverwrite(t *testing.T) {
 	registry.ListenEvent("test.event", firstHandler)
 	registry.ListenEvent("test.event", secondHandler)
 
-	if len(registry.EventHandlers) != 1 {
-		t.Errorf("Expected 1 event handler, got %d", len(registry.EventHandlers))
+	if registry.EventHandlersCount() != 1 {
+		t.Errorf("Expected 1 event handler, got %d", registry.EventHandlersCount())
 	}
 
-	registry.EventHandlers["test.event"](nil)
+	handler, _ := registry.GetEventHandler("test.event")
+	handler(nil)
 
 	if firstCalled {
 		t.Error("First handler should not have been called")
@@ -281,15 +282,18 @@ func TestHandlerErrors(t *testing.T) {
 	registry.HandleCommand("error.command", commandHandler)
 	registry.ServeQuery("error.query", queryHandler)
 
-	if err := registry.EventHandlers["error.event"](nil); err != expectedErr {
+	eventFn, _ := registry.GetEventHandler("error.event")
+	if err := eventFn(nil); err != expectedErr {
 		t.Errorf("Expected error %v, got %v", expectedErr, err)
 	}
 
-	if err := registry.CommandHandlers["error.command"](nil); err != expectedErr {
+	commandFn, _ := registry.GetCommandHandler("error.command")
+	if err := commandFn(nil); err != expectedErr {
 		t.Errorf("Expected error %v, got %v", expectedErr, err)
 	}
 
-	if _, err := registry.QueryHandlers["error.query"](nil); err != expectedErr {
+	queryFn, _ := registry.GetQueryHandler("error.query")
+	if _, err := queryFn(nil); err != expectedErr {
 		t.Errorf("Expected error %v, got %v", expectedErr, err)
 	}
 }

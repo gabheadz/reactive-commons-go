@@ -69,7 +69,7 @@ func TestNewEventPublisher(t *testing.T) {
 		DomainEventsExchange: "events",
 	}
 
-	publisher := newEventPublisher(nil, domain)
+	publisher := newEventPublisher(newMockRabbitClientPublisher(), &domain)
 
 	if publisher == nil {
 		t.Fatal("newEventPublisher() returned nil")
@@ -90,7 +90,7 @@ func TestRabbitEventPublisher_EmitEvent_MissingEventName(t *testing.T) {
 		DomainEventsExchange: "events",
 	}
 
-	publisher := newEventPublisher(newMockRabbitClientPublisher(), domain)
+	publisher := newEventPublisher(newMockRabbitClientPublisher(), &domain)
 
 	event := DomainEvent[any]{
 		Name:    "",
@@ -120,7 +120,7 @@ func TestRabbitEventPublisher_EmitEvent_MissingDomain(t *testing.T) {
 		DomainEventsExchange: "events",
 	}
 
-	publisher := newEventPublisher(newMockRabbitClientPublisher(), domain)
+	publisher := newEventPublisher(newMockRabbitClientPublisher(), &domain)
 
 	event := DomainEvent[any]{
 		Name:    "user.created",
@@ -162,7 +162,7 @@ func TestRabbitEventPublisher_EmitEvent_Success(t *testing.T) {
 		return nil
 	}
 
-	publisher := newEventPublisher(mockClient, domain)
+	publisher := newEventPublisher(mockClient, &domain)
 
 	event := DomainEvent[any]{
 		Name:    "user.created",
@@ -226,7 +226,7 @@ func TestRabbitEventPublisher_EmitEvent_PublishError(t *testing.T) {
 		return expectedError
 	}
 
-	publisher := newEventPublisher(mockClient, domain)
+	publisher := newEventPublisher(mockClient, &domain)
 
 	event := DomainEvent[any]{
 		Name:    "user.created",
@@ -260,7 +260,7 @@ func TestRabbitEventPublisher_EmitEvent_DifferentDataTypes(t *testing.T) {
 		return nil
 	}
 
-	publisher := newEventPublisher(mockClient, domain)
+	publisher := newEventPublisher(mockClient, &domain)
 
 	tests := []struct {
 		name      string
@@ -332,7 +332,7 @@ func TestRabbitEventPublisher_EmitEvent_HeadersValidation(t *testing.T) {
 		return nil
 	}
 
-	publisher := newEventPublisher(mockClient, domain)
+	publisher := newEventPublisher(mockClient, &domain)
 
 	event := DomainEvent[any]{
 		Name:    "order.placed",
@@ -388,7 +388,7 @@ func TestRabbitEventPublisher_EmitEvent_MultipleEvents(t *testing.T) {
 		return nil
 	}
 
-	publisher := newEventPublisher(mockClient, domain)
+	publisher := newEventPublisher(mockClient, &domain)
 
 	events := []DomainEvent[any]{
 		{Name: "event1", EventId: "id1", Data: "data1"},
@@ -440,7 +440,7 @@ func TestRabbitEventPublisher_DomainConfiguration(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			publisher := newEventPublisher(nil, tt.domain)
+			publisher := newEventPublisher(newMockRabbitClientPublisher(), &tt.domain)
 
 			if publisher == nil {
 				t.Fatal("newEventPublisher() returned nil")

@@ -1,26 +1,26 @@
 package rcommons
 
 type Registry struct {
-	EventHandlers   map[string]EventHandler
-	CommandHandlers map[string]CommandHandler
-	QueryHandlers   map[string]QueryHandler
+	eventHandlers   map[string]EventHandler
+	commandHandlers map[string]CommandHandler
+	queryHandlers   map[string]QueryHandler
 }
 
-func NewRegistry() *Registry {
-	return &Registry{
-		EventHandlers:   make(map[string]EventHandler),
-		CommandHandlers: make(map[string]CommandHandler),
-		QueryHandlers:   make(map[string]QueryHandler),
+func NewRegistry() Registry {
+	return Registry{
+		eventHandlers:   make(map[string]EventHandler),
+		commandHandlers: make(map[string]CommandHandler),
+		queryHandlers:   make(map[string]QueryHandler),
 	}
 }
 
 func (r *Registry) ListenEvent(eventName string, handler EventHandler) {
-	r.EventHandlers[eventName] = handler
+	r.eventHandlers[eventName] = handler
 }
 
 // ListenEventTyped registers a type-safe event handler
-func ListenEventTyped[T any](r *Registry, eventName string, handler func(event T) error) {
-	r.EventHandlers[eventName] = EventHandlerFunc[T](handler).ToEventHandler()
+func ListenEventTyped[T any](r Registry, eventName string, handler func(event T) error) {
+	r.eventHandlers[eventName] = EventHandlerFunc[T](handler).ToEventHandler()
 }
 
 func (r *Registry) ListenEvents(handlers map[string]EventHandler) {
@@ -30,7 +30,7 @@ func (r *Registry) ListenEvents(handlers map[string]EventHandler) {
 }
 
 func (r *Registry) HandleCommand(commandName string, handler CommandHandler) {
-	r.CommandHandlers[commandName] = handler
+	r.commandHandlers[commandName] = handler
 }
 
 func (r *Registry) HandleCommands(handlers map[string]CommandHandler) {
@@ -40,7 +40,7 @@ func (r *Registry) HandleCommands(handlers map[string]CommandHandler) {
 }
 
 func (r *Registry) ServeQuery(resource string, handler QueryHandler) {
-	r.QueryHandlers[resource] = handler
+	r.queryHandlers[resource] = handler
 }
 
 func (r *Registry) ServeQueries(handlers map[string]QueryHandler) {
@@ -50,12 +50,73 @@ func (r *Registry) ServeQueries(handlers map[string]QueryHandler) {
 }
 
 func (r *Registry) HasEventHandler(eventName string) bool {
-	_, exists := r.EventHandlers[eventName]
+	_, exists := r.eventHandlers[eventName]
 	return exists
 }
 
+func (r *Registry) HasCommandHandler(commandName string) bool {
+	_, exists := r.commandHandlers[commandName]
+	return exists
+}
+
+func (r *Registry) HasQueryHandler(resource string) bool {
+	_, exists := r.queryHandlers[resource]
+	return exists
+}
+
+func (r *Registry) GetEventHandler(eventName string) (EventHandler, bool) {
+	h, exists := r.eventHandlers[eventName]
+	return h, exists
+}
+
+func (r *Registry) GetCommandHandler(commandName string) (CommandHandler, bool) {
+	h, exists := r.commandHandlers[commandName]
+	return h, exists
+}
+
+func (r *Registry) GetQueryHandler(resource string) (QueryHandler, bool) {
+	h, exists := r.queryHandlers[resource]
+	return h, exists
+}
+
+func (r *Registry) GetEventHandlers() map[string]EventHandler {
+	handlers := make(map[string]EventHandler, len(r.eventHandlers))
+	for k, v := range r.eventHandlers {
+		handlers[k] = v
+	}
+	return handlers
+}
+
+func (r *Registry) GetCommandHandlers() map[string]CommandHandler {
+	handlers := make(map[string]CommandHandler, len(r.commandHandlers))
+	for k, v := range r.commandHandlers {
+		handlers[k] = v
+	}
+	return handlers
+}
+
+func (r *Registry) GetQueryHandlers() map[string]QueryHandler {
+	handlers := make(map[string]QueryHandler, len(r.queryHandlers))
+	for k, v := range r.queryHandlers {
+		handlers[k] = v
+	}
+	return handlers
+}
+
+func (r *Registry) EventHandlersCount() int {
+	return len(r.eventHandlers)
+}
+
+func (r *Registry) CommandHandlersCount() int {
+	return len(r.commandHandlers)
+}
+
+func (r *Registry) QueryHandlersCount() int {
+	return len(r.queryHandlers)
+}
+
 func (r *Registry) Clear() {
-	r.EventHandlers = make(map[string]EventHandler)
-	r.CommandHandlers = make(map[string]CommandHandler)
-	r.QueryHandlers = make(map[string]QueryHandler)	
+	r.eventHandlers = make(map[string]EventHandler)
+	r.commandHandlers = make(map[string]CommandHandler)
+	r.queryHandlers = make(map[string]QueryHandler)
 }

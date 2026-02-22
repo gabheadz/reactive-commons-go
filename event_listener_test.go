@@ -107,7 +107,7 @@ func TestNewEventListener(t *testing.T) {
 	registry := NewRegistry()
 	mockClient := newMockRabbitClientListener()
 
-	listener := newEventListener(mockClient, domain, registry)
+	listener := newEventListener(mockClient, &domain, &registry)
 
 	if listener == nil {
 		t.Fatal("newEventListener() returned nil")
@@ -121,7 +121,7 @@ func TestNewEventListener(t *testing.T) {
 		t.Errorf("Expected DomainEventsExchange '%s', got '%s'", domain.DomainEventsExchange, listener.domain.DomainEventsExchange)
 	}
 
-	if listener.registry != registry {
+	if listener.registry != &registry {
 		t.Error("Expected registry to be set correctly")
 	}
 
@@ -148,7 +148,7 @@ func TestRabbitEventListener_ProcessEventMessage_Success(t *testing.T) {
 
 	registry.ListenEvent("user.created", handler)
 
-	listener := newEventListener(newMockRabbitClientListener(), domain, registry)
+	listener := newEventListener(newMockRabbitClientListener(), &domain, &registry)
 
 	event := DomainEvent[any]{
 		Name:    "user.created",
@@ -202,7 +202,7 @@ func TestRabbitEventListener_ProcessEventMessage_HandlerError(t *testing.T) {
 
 	registry.ListenEvent("user.created", handler)
 
-	listener := newEventListener(newMockRabbitClientListener(), domain, registry)
+	listener := newEventListener(newMockRabbitClientListener(), &domain, &registry)
 
 	event := DomainEvent[any]{
 		Name:    "user.created",
@@ -244,7 +244,7 @@ func TestRabbitEventListener_ProcessEventMessage_InvalidJson(t *testing.T) {
 
 	registry.ListenEvent("user.created", handler)
 
-	listener := newEventListener(newMockRabbitClientListener(), domain, registry)
+	listener := newEventListener(newMockRabbitClientListener(), &domain, &registry)
 
 	invalidJson := []byte("invalid json data")
 	mockMsg, mockAck := newMockDelivery(invalidJson)
@@ -273,7 +273,7 @@ func TestRabbitEventListener_ProcessEventMessage_NoHandler(t *testing.T) {
 	registry := NewRegistry()
 	// Don't register any handler
 
-	listener := newEventListener(newMockRabbitClientListener(), domain, registry)
+	listener := newEventListener(newMockRabbitClientListener(), &domain, &registry)
 
 	event := DomainEvent[any]{
 		Name:    "user.created",
@@ -352,7 +352,7 @@ func TestRabbitEventListener_ProcessEventMessage_DifferentEventTypes(t *testing.
 
 			registry.ListenEvent("test.event", handler)
 
-			listener := newEventListener(newMockRabbitClientListener(), domain, registry)
+			listener := newEventListener(newMockRabbitClientListener(), &domain, &registry)
 
 			event := DomainEvent[any]{
 				Name:    "test.event",
@@ -395,7 +395,7 @@ func TestRabbitEventListener_ProcessEventMessage_MultipleEvents(t *testing.T) {
 	registry.ListenEvent("event2", handler)
 	registry.ListenEvent("event3", handler)
 
-	listener := newEventListener(newMockRabbitClientListener(), domain, registry)
+	listener := newEventListener(newMockRabbitClientListener(), &domain, &registry)
 
 	events := []DomainEvent[any]{
 		{Name: "event1", EventId: "id1", Data: "data1"},
@@ -449,7 +449,7 @@ func TestRabbitEventListener_RegistryIntegration(t *testing.T) {
 		t.Error("Expected handler to exist after registration")
 	}
 
-	listener := newEventListener(newMockRabbitClientListener(), domain, registry)
+	listener := newEventListener(newMockRabbitClientListener(), &domain, &registry)
 
 	event := DomainEvent[any]{
 		Name:    "user.created",
@@ -487,7 +487,7 @@ func TestRabbitEventListener_EmptyEventData(t *testing.T) {
 
 	registry.ListenEvent("test.event", handler)
 
-	listener := newEventListener(newMockRabbitClientListener(), domain, registry)
+	listener := newEventListener(newMockRabbitClientListener(), &domain, &registry)
 
 	event := DomainEvent[any]{
 		Name:    "test.event",
@@ -524,7 +524,7 @@ func TestRabbitEventListener_HandlerPanic(t *testing.T) {
 
 	registry.ListenEvent("test.event", handler)
 
-	listener := newEventListener(newMockRabbitClientListener(), domain, registry)
+	listener := newEventListener(newMockRabbitClientListener(), &domain, &registry)
 
 	event := DomainEvent[any]{
 		Name:    "test.event",
@@ -564,7 +564,7 @@ func TestRabbitEventListener_EventIdPreservation(t *testing.T) {
 
 	registry.ListenEvent("test.event", handler)
 
-	listener := newEventListener(newMockRabbitClientListener(), domain, registry)
+	listener := newEventListener(newMockRabbitClientListener(), &domain, &registry)
 
 	expectedEventId := "unique-event-id-12345"
 	event := DomainEvent[any]{
@@ -600,7 +600,7 @@ func TestRabbitEventListener_ComplexEventData(t *testing.T) {
 
 	registry.ListenEvent("order.placed", handler)
 
-	listener := newEventListener(newMockRabbitClientListener(), domain, registry)
+	listener := newEventListener(newMockRabbitClientListener(), &domain, &registry)
 
 	complexData := map[string]interface{}{
 		"orderId": "order-123",
@@ -713,7 +713,7 @@ func TestRabbitEventListener_DomainConfiguration(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			registry := NewRegistry()
-			listener := newEventListener(nil, tt.domain, registry)
+			listener := newEventListener(nil, &tt.domain, &registry)
 
 			if listener == nil {
 				t.Fatal("newEventListener() returned nil")
