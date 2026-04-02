@@ -37,9 +37,14 @@ func tryStartContainer(ctx context.Context) (host string, port int, cleanup func
 		}
 	}()
 
+	dockerImage := os.Getenv("TEST_RABBITMQ_IMAGE")
+	if dockerImage == "" {
+		dockerImage = "rabbitmq:3.12-alpine"
+	}
+
 	container, err := testcontainers.GenericContainer(ctx, testcontainers.GenericContainerRequest{
 		ContainerRequest: testcontainers.ContainerRequest{
-			Image:        "rabbitmq:3.12-alpine",
+			Image:        dockerImage,
 			ExposedPorts: []string{"5672/tcp"},
 			WaitingFor:   wait.ForListeningPort("5672/tcp").WithStartupTimeout(60 * time.Second),
 		},
